@@ -1,0 +1,48 @@
+[project]
+name = "music-gen"
+version = "0.1.0"
+description = "Adaptive AI music system that learns one user's preferences from pairwise feedback."
+authors = [
+    { email = "benjaminkuoch@gmail.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "accelerate>=1.12",
+    "diffusers>=0.40.0",
+    "huggingface-hub>=0.34",
+    "librosa>=1.0",
+    "numpy>=2.0",
+    "pydantic-settings>=2.10",
+    "soundfile>=0.13",
+    "torch>=2.9",
+    "transformers>=4.57",
+]
+
+[project.optional-dependencies]
+# MuQ-MuLan weights are CC BY-NC 4.0: research/evaluation use only (see README "Licenses").
+muq = ["muq>=0.1.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.13",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+    "slow: loads real pretrained models (multi-GB downloads); run with `pytest -m slow`",
+]
+addopts = "-m 'not slow'"
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["scripts/third_party"]  # vendored, kept byte-identical to upstream
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

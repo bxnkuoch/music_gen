@@ -1,0 +1,17 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+
+# Generated data: model weights, audio, raw results (summaries live in docs/results/)
+data/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
