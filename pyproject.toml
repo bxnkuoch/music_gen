@@ -8,12 +8,16 @@ authors = [
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "accelerate>=1.12",
+    "alembic>=1.14",
     "diffusers>=0.40.0",
     "huggingface-hub>=0.34",
     "librosa>=1.0",
     "numpy>=2.0",
+    "psycopg[binary]>=3.2",
     "pydantic-settings>=2.10",
+    "pyyaml>=6.0",
     "soundfile>=0.13",
+    "sqlalchemy>=2.0",
     "torch>=2.9",
     "transformers>=4.57",
 ]
@@ -46,3 +50,6 @@ extend-exclude = ["scripts/third_party"]  # vendored, kept byte-identical to ups
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]  # not our local alembic/ migrations folder

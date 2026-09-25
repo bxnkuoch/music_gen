@@ -39,3 +39,19 @@ A glossary for the ideas this project uses, written for someone meeting them for
 **Interleaving.** Mixing clips from two strategies in one slate and counting whose clip you pick. It compares two systems with far less data than a classic A/B test.
 
 **Simulated user.** A fake listener with a known hidden taste. Because we know the right answer, we can check whether the model finds it.
+
+## Engineering terms (Phase 1)
+
+**Database migration (Alembic).** A versioned script that changes the database structure, for example "add a table". Migrations are stored in `alembic/versions/` and applied in order with `alembic upgrade head`, so every copy of the database ends up identical. You never edit tables by hand.
+
+**Transaction.** A group of database changes that either all happen or none do. Saving a song row and marking its job "done" is one transaction, so you can never have one without the other.
+
+**Atomic file write.** Write to a temporary file, then rename it. A rename is instant, so the final filename either doesn't exist yet or holds a complete file, never half of one.
+
+**Idempotent.** Safe to run twice: the second run changes nothing. `generate_pool.py` is idempotent because unique constraints stop duplicate prompts and jobs.
+
+**Unique constraint / `NULLS NOT DISTINCT`.** A database rule such as "no two jobs with the same prompt, seed and settings". By default Postgres treats two empty (NULL) values as *different*, which would quietly allow duplicates. `NULLS NOT DISTINCT` fixes that.
+
+**Job queue.** A table of work items with a status (`pending → running → done/failed`). If the program crashes, jobs stuck in `running` are put back to `pending` on the next run.
+
+**Fake (in tests).** A tiny stand-in for something slow or large, like the 6 GB music model, that behaves the same from the outside. It lets tests check *our* logic in milliseconds, and simulate rare failures on demand.

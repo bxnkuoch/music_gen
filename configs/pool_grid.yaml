@@ -1,0 +1,34 @@
+# The prompt grid for the pre-generated song pool (Phase 1).
+#
+# Every genre x mood x energy combination becomes one prompt (10 x 4 x 3 = 120),
+# and each prompt is generated with `seeds_per_prompt` different seeds (x3 = 360 clips,
+# about 1 hour on an M3). One instrument and one BPM are picked per prompt with a
+# fixed random seed, so the grid is identical every time.
+#
+# Changing this file and re-running scripts/generate_pool.py only ADDS the new
+# prompts; existing songs are kept.
+
+random_seed: 42
+seeds_per_prompt: 3
+duration_s: 30
+
+# genre -> instruments that suit it (one is picked per prompt)
+genres:
+  r&b: [warm rhodes piano, smooth electric bass, soft finger snaps]
+  lo-fi hip hop: [dusty jazz piano, muted trumpet, vinyl crackle drums]
+  synthwave: [retro analog synths, gated reverb drums, arpeggiated bass]
+  heavy metal: [distorted electric guitars, double kick drums, growling bass]
+  acoustic folk: [fingerpicked acoustic guitar, harmonica, upright bass]
+  house: [four-on-the-floor kick, deep sub bass, filtered chords]
+  jazz: [brushed drums, walking upright bass, saxophone]
+  classical: [string quartet, solo piano, orchestral woodwinds]
+  reggae: [offbeat guitar skank, deep dub bass, organ bubble]
+  ambient: [evolving synth pads, granular textures, soft bells]
+
+moods: [chill, dark, uplifting, melancholic]
+
+# BPM ranges are sampled uniformly (integers); `words` go into the prompt text.
+energy:
+  low: {words: slow and relaxed, bpm: [65, 85]}
+  medium: {words: steady mid-tempo groove, bpm: [90, 115]}
+  high: {words: fast and energetic, bpm: [120, 150]}

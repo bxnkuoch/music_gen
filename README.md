@@ -2,7 +2,7 @@
 
 A music system that **learns one listener's taste** from "A or B?" feedback and uses that learned taste to **steer generation** and **rank candidate songs**. Open-source models generate and embed the audio. The preference learning, exploration strategy and evaluation are built from scratch.
 
-> **Status:** Phase 0 of 8 is complete (model stack chosen and benchmarked). See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
+> **Status:** Phases 0–1 of 8 are complete (model stack benchmarked; a 360-song pool generated and tracked in PostgreSQL). See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
 
 ## Why this is more than "call a music API"
 
@@ -27,7 +27,7 @@ Model comparison: [docs/MODEL_RESEARCH.md](docs/MODEL_RESEARCH.md). Design: [doc
 
 ## Getting started
 
-Requirements: macOS on Apple Silicon (or Linux with NVIDIA), [uv](https://docs.astral.sh/uv/), about 15 GB free disk.
+Requirements: macOS on Apple Silicon (or Linux with NVIDIA), [uv](https://docs.astral.sh/uv/), [Docker](https://www.docker.com/), about 15 GB free disk.
 
 ```bash
 # 1. Install Python 3.12 + all dependencies into .venv
@@ -36,13 +36,20 @@ uv sync --extra muq
 # 2. Download and convert the generation model (~6 GB, one time)
 bash scripts/download_acestep.sh
 
-# 3. Run the fast tests (no downloads, ~2 s)
+# 3. Start the database and create the tables
+docker compose up -d
+uv run alembic upgrade head
+
+# 4. Run the fast tests (~2 s; database tests need step 3)
 uv run pytest
 
-# 4. Run the tests against the real models (downloads CLAP + MuQ, ~1 min)
+# 5. Run the tests against the real models (downloads CLAP + MuQ, ~1 min)
 uv run pytest -m slow
 
-# 5. Reproduce the Phase 0 benchmark (~5 min; writes WAVs to data/audio/phase0/)
+# 6. Generate the song pool (360 clips, ~1 hour; safe to stop and re-run)
+uv run python scripts/generate_pool.py
+
+# Optional: reproduce the Phase 0 benchmark (~5 min)
 uv run python scripts/phase0_benchmark.py
 ```
 
@@ -53,11 +60,16 @@ Settings are read from environment variables or a `.env` file. Copy `.env.exampl
 ```
 src/music_gen/
   config.py            settings (env vars / .env), device selection
+  db.py                database tables: prompts, generation_jobs, songs
   audio.py             audio validation, mono/resample, WAV I/O
+  pool/                prompt grid + resumable pool generation
   generation/          ACE-Step wrapper: seeded, validated generation
   embeddings/          CLAP + MuQ-MuLan wrappers (deterministic, L2-normalized)
 tests/                 fast unit tests (fakes) + @slow tests (real models)
-scripts/               benchmark, model download, fixture recording
+scripts/               pool generation, benchmark, model download
+configs/               pool_grid.yaml (what the pool contains)
+alembic/               database migrations (schema history)
+docker-compose.yml     PostgreSQL + pgvector
 docs/
   ROADMAP.md           ← what's done / what's next (start here)
   ARCHITECTURE.md      design decisions and reasons
@@ -69,7 +81,7 @@ data/                  (git-ignored) model weights, audio, raw results
 
 ## Testing
 
-- `uv run pytest`: **52 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, resampling, missing weights).
+- `uv run pytest`: **86 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, missing weights). Database tests cover migrations matching the models, constraints, crash and resume, retries and no duplicates, using a separate test database. They're skipped, with a message, if Postgres isn't running.
 - `uv run pytest -m slow`: **4 integration tests** with the real models. They include a regression test for a broken CLAP checkpoint, and a check that our MuQ compatibility patch reproduces the original model's outputs.
 - `uv run ruff check . && uv run ruff format --check .`: lint and formatting.
 

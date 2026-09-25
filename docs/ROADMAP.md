@@ -7,8 +7,8 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | Research + benchmark the model stack | ✅ |
-| 1 | Generation pipeline + song pool in a database | ⬜ **next** |
-| 2 | Song representations (embeddings + interpretable features) | ⬜ |
+| 1 | Generation pipeline + song pool in a database | ✅ |
+| 2 | Song representations (embeddings + interpretable features) | ⬜ **next** |
 | 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ⬜ |
 | 4 | Live generation + personalized candidate ranking | ⬜ |
 | 5 | Exploration vs exploitation (Thompson sampling slates) | ⬜ |
@@ -32,17 +32,29 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 
 Key findings: 30 s clip in about 9 s; the broken CLAP checkpoint replaced; MuQ patched for transformers 5; embeddings need mean-centering.
 
-## Phase 1: generation pipeline and song pool ⬜
+## Phase 1: generation pipeline and song pool ✅
 
-**Goal:** a reproducible pool of about 400 clips of 30 s each, with every clip's metadata in PostgreSQL.
+**Goal:** a reproducible pool of 30 s clips, with every clip's metadata in PostgreSQL.
 
-- [ ] `docker-compose.yml` with PostgreSQL 17 + pgvector (the ML code keeps running natively on the Mac, because Docker can't use the Mac's GPU)
-- [ ] Database models (SQLAlchemy) + Alembic migrations: `songs`, `generation_jobs`, `prompts`
-- [ ] A prompt grid: genre × mood × tempo × instrumentation → about 400 prompts, stored in a YAML config
-- [ ] `scripts/generate_pool.py`: resumable (skips clips already done), logs failures without stopping, records model name, seed and parameters
-- [ ] Tests: database round-trip, resuming after a crash, and that a failed generation doesn't corrupt the pool
+- [x] `docker-compose.yml`: PostgreSQL 17 + pgvector, bound to localhost, plus a separate `music_gen_test` database for tests
+- [x] Tables (`src/music_gen/db.py`) + Alembic migration: `prompts`, `generation_jobs`, `songs`
+- [x] Prompt grid (`configs/pool_grid.yaml`): 10 genres × 4 moods × 3 energy levels = **120 prompts × 3 seeds = 360 clips**. The instrument and BPM for each prompt are picked with a fixed seed, so the grid is identical on every machine.
+- [x] `scripts/generate_pool.py`: resumable, keeps going past individual failures, stops after 5 failures in a row, retries failed jobs up to 3 times across runs, writes files atomically
+- [x] 34 new tests: grid validation, schema constraints, migrations matching the models, crash and resume, retries, no duplicates
+- [x] Full pool generated → see [results/phase1_pool.md](results/phase1_pool.md)
 
-**Done when:** `uv run python scripts/generate_pool.py` fills the database with about 400 playable clips, and running it twice doesn't duplicate anything.
+**How the pieces fit:** a *prompt* is text plus structured attributes (genre, mood, energy, instrument). A *job* is "generate this prompt with this seed/BPM/length using this model" and tracks its status (`pending → running → done/failed`). A *song* exists only once its WAV file is safely on disk.
+
+**Useful commands**
+```bash
+docker compose up -d                                  # start the database
+uv run alembic upgrade head                           # create/update tables
+uv run python scripts/generate_pool.py --status       # progress
+uv run python scripts/generate_pool.py                # generate everything pending (Ctrl+C is safe)
+docker compose exec db psql -U music_gen              # poke around in SQL
+```
+
+**Worth knowing:** the ACE-Step seed is deterministic, so retrying a job that failed because of its *content* (e.g. silent output) gives the same result. Retries only help with *transient* errors (e.g. running out of memory). If a job fails 3 times it stays `failed`. That's recorded, not hidden.
 
 ## Phase 2: song representations ⬜
 
@@ -54,7 +66,7 @@ Key findings: 30 s clip in about 9 s; the broken CLAP checkpoint replaced; MuQ p
 
 ## Phase 3: ratings and preference learning (core of the MVP) ⬜
 
-- [ ] Minimal rating page: 4 clips per round, pick your favorite (and optionally your least favorite), in shuffled order
+- [ ] Minimal rating page: 4 clips per round, pick your favorite (and optionally your least favorite), in shuffled order, **loudness-normalized playback** (Phase 1 found about 16 dB spread; louder clips tend to win comparisons)
 - [ ] Log every **slate**: what was shown, in what order, which strategy chose it
 - [ ] Turn feedback into pairwise preferences ("the favorite beat each other clip")
 - [ ] **Bayesian Bradley-Terry model** (`personalization/`): pure NumPy, online Laplace updates
@@ -72,3 +84,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design. Each phase gets a de
 - Batch generation (ACE-Step supports up to 8 clips per call) if pool generation gets slow
 - Per-user LoRA fine-tuning of ACE-Step (supported from about 8 songs), a stretch goal
 - Cloud GPU (Modal) for the deployed demo in Phase 8
+- Store audio as FLAC instead of WAV (about half the disk space; WAV is 5.8 MB per 30 s clip)

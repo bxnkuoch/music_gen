@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     device: Device = "auto"
     log_level: str = "INFO"
 
+    # Local development database from docker-compose.yml (bound to localhost only).
+    database_url: str = "postgresql+psycopg://music_gen:music_gen@localhost:5432/music_gen"
+    test_database_url: str = (
+        "postgresql+psycopg://music_gen:music_gen@localhost:5432/music_gen_test"
+    )
+
     # Generation: ACE-Step 1.5 turbo (2B), converted locally to diffusers format.
     # Produced by scripts/download_acestep.sh.
     acestep_model_path: Path = Path("data/models/acestep-v15-turbo-diffusers")

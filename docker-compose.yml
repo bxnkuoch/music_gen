@@ -1,0 +1,26 @@
+# Local PostgreSQL + pgvector. Only the database runs in Docker: the ML code runs
+# natively so it can use the Mac's GPU (Docker on macOS can't).
+#
+#   docker compose up -d      # start (data persists in the named volume)
+#   docker compose down       # stop (keeps data)
+#   docker compose down -v    # stop AND delete all data
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-music_gen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-music_gen}
+      POSTGRES_DB: ${POSTGRES_DB:-music_gen}
+    ports:
+      - "127.0.0.1:5432:5432"  # localhost only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-music_gen}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
