@@ -55,3 +55,17 @@ A glossary for the ideas this project uses, written for someone meeting them for
 **Job queue.** A table of work items with a status (`pending → running → done/failed`). If the program crashes, jobs stuck in `running` are put back to `pending` on the next run.
 
 **Fake (in tests).** A tiny stand-in for something slow or large, like the 6 GB music model, that behaves the same from the outside. It lets tests check *our* logic in milliseconds, and simulate rare failures on demand.
+
+## Feature terms (Phase 2)
+
+**pgvector.** A Postgres extension that stores embeddings as a column type and finds the nearest ones fast (`ORDER BY embedding <=> target`). It powers "find similar songs".
+
+**Cosine distance.** 1 − cosine similarity: 0 means the same direction, 1 means unrelated, 2 means opposite.
+
+**Zero-shot calibration.** Some tag descriptions are "close to everything", so they win for every song. Standardizing each tag's scores across all songs (subtract the average, divide by the spread) asks "is this song *more* chill than usual?" instead of "is chill the closest word?". It needs no labels.
+
+**Linear probe.** A simple classifier trained on features to test what information they contain. If a straight-line boundary can separate genres, then a linear preference model can learn "I like this genre". It's evaluated on held-out songs.
+
+**Grouped cross-validation.** Split data so related items (the 3 seeds of one prompt) are always on the same side of the train/test split. Otherwise the test is too easy, because the model has already seen a near-copy.
+
+**Octave error.** A tempo estimator reporting half or double the true BPM (e.g. 70 vs 140). It's common and understandable, because both fit the beat.

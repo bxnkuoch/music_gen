@@ -7,6 +7,7 @@ the live database. tests/test_db.py fails if these models and the migrations dis
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -102,6 +103,31 @@ class Song(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     job: Mapped[GenerationJob] = relationship(back_populates="song")
+
+
+EMBEDDING_DIM = 512  # both CLAP and MuQ-MuLan produce 512-d vectors
+
+
+class SongEmbedding(Base):
+    """One song's embedding from one model. Several models can coexist per song."""
+
+    __tablename__ = "song_embeddings"
+
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id"), primary_key=True)
+    model_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    embedding: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM))  # L2-normalized
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SongFeatures(Base):
+    """A named, versioned set of scalar features for one song, e.g. "signal_v1"."""
+
+    __tablename__ = "song_features"
+
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id"), primary_key=True)
+    feature_set: Mapped[str] = mapped_column(String(160), primary_key=True)
+    values: Mapped[dict[str, float]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def make_session_factory(database_url: str) -> sessionmaker:

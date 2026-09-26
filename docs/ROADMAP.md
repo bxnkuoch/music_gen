@@ -8,8 +8,8 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 |---|---|---|
 | 0 | Research + benchmark the model stack | ✅ |
 | 1 | Generation pipeline + song pool in a database | ✅ |
-| 2 | Song representations (embeddings + interpretable features) | ⬜ **next** |
-| 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ⬜ |
+| 2 | Song representations (embeddings + interpretable features) | ✅ |
+| 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ⬜ **next** |
 | 4 | Live generation + personalized candidate ranking | ⬜ |
 | 5 | Exploration vs exploitation (Thompson sampling slates) | ⬜ |
 | 6 | Reference songs + similarity search | ⬜ |
@@ -56,20 +56,35 @@ docker compose exec db psql -U music_gen              # poke around in SQL
 
 **Worth knowing:** the ACE-Step seed is deterministic, so retrying a job that failed because of its *content* (e.g. silent output) gives the same result. Retries only help with *transient* errors (e.g. running out of memory). If a job fails 3 times it stays `failed`. That's recorded, not hidden.
 
-## Phase 2: song representations ⬜
+## Phase 2: song representations ✅
 
-- [ ] `song_embeddings` table (pgvector), keyed by (song, model name), so CLAP and MuQ can coexist
-- [ ] Interpretable features: librosa tempo, loudness, brightness (spectral centroid), onset density
-- [ ] Fixed **tag vocabulary** (about 40 tags: moods, genres, instruments, vocal type) + CLAP zero-shot tag scores
-- [ ] Feature builder: mean-center (Phase 0 finding) → PCA to 32 dimensions → combine with tags and librosa features
-- [ ] Tests: features are deterministic; PCA is fit once and versioned; nearest neighbors look sensible
+- [x] Pool extended with the listener's favorite styles: lo-fi guitar, pop, hyperpop, anime soundtrack, fantasy adventure video game (**540 songs**, 15 genres). The grid is append-only, and a test guarantees existing prompts never change.
+- [x] `song_embeddings` (pgvector) and `song_features` (JSONB) tables + migration
+- [x] CLAP + MuQ-MuLan embeddings for every song
+- [x] Signal features (`features/signal.py`): tempo, loudness, brightness, onset rate
+- [x] Tag vocabulary (`configs/tags.yaml`): 45 tags in 4 categories, including "melodic" and "plucked guitar"
+- [x] Feature space (`features/space.py`): mean-center → 32 PCs (94% variance) + tags + signal → standardized, 81 features, saved and versioned
+- [x] Similar-song search: `scripts/similar_songs.py <song_id>`
+- [x] Validation against ground truth: [results/phase2_features.md](results/phase2_features.md)
+- [x] Tests: known-tempo click tracks, tag vocabulary, feature space math, storage and search
+
+**Key findings:** genre and energy are clearly present in the features; mood (as ACE-Step renders it) is not. Raw zero-shot tags are biased and need calibrating. ACE-Step matches the requested BPM about 60% of the time. → Mood becomes a *context the listener provides*, not something detected from audio (ARCHITECTURE.md §7).
+
+**Useful commands**
+```bash
+uv run python scripts/compute_features.py        # embed/featurize new songs, refit the space
+uv run python scripts/phase2_validation.py       # re-measure feature quality
+uv run python scripts/similar_songs.py 42        # songs similar to song 42
+```
 
 ## Phase 3: ratings and preference learning (core of the MVP) ⬜
 
 - [ ] Minimal rating page: 4 clips per round, pick your favorite (and optionally your least favorite), in shuffled order, **loudness-normalized playback** (Phase 1 found about 16 dB spread; louder clips tend to win comparisons)
 - [ ] Log every **slate**: what was shown, in what order, which strategy chose it
 - [ ] Turn feedback into pairwise preferences ("the favorite beat each other clip")
+- [ ] Session start: the listener picks their current **mood/context** (stored with every slate)
 - [ ] **Bayesian Bradley-Terry model** (`personalization/`): pure NumPy, online Laplace updates
+- [ ] Compare one global taste vs. **shared taste + per-mood adjustment** on held-out choices
 - [ ] Simulated users whose hidden taste is defined on MuQ features (the model only sees CLAP): check that the model recovers them
 - [ ] First learning curve: pairwise accuracy vs. amount of feedback
 

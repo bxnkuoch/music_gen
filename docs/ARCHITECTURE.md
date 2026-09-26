@@ -52,10 +52,13 @@ Pairwise preferences → Bayesian Bradley-Terry update (ours) → next round
 ### 1. Generation is decoupled from learning
 Most feedback is collected from a **pre-generated pool** (Phase 1). The live loop (Phase 4) proves the system works end to end, but it doesn't have to carry data collection. Phase 0 measured about 9 s per clip, so both are feasible on the Mac.
 
-### 2. Song representation
-`x_song = [PCA(mean-centered CLAP audio embedding) | CLAP tag scores | tempo, loudness, brightness, onset density | generation params]`
-- Centering is required: Phase 0 found every embedding shares a large common direction (cosine similarities around 0.7 even across unrelated genres).
-- The **same tag vocabulary** is used for features, prompt parsing, and generation steering. That's what connects the system.
+### 2. Song representation (built in Phase 2)
+`x_song = [32 PCs of mean-centered CLAP embedding | 45 CLAP tag scores | tempo, loudness, brightness, onset rate]` → 81 features, each standardized. Implemented in `features/space.py`; the fitted numbers are saved to `data/models/feature_space_v1.npz`.
+- **Centering** is required: every embedding shares a large common direction (cosine similarities of 0.7–0.9 even across unrelated genres).
+- **32 PCs keep 94% of the embedding variance.**
+- **Tag scores must be calibrated** (standardized per tag across songs). Raw zero-shot scores have a built-in bias (one label, e.g. "chill", wins for most songs). Standardizing fixes it (e.g. CLAP recognising heavy metal: 6% → 64%). The feature space's standardization does this automatically.
+- The **same tag vocabulary** (`configs/tags.yaml`) is used for features, prompt parsing, and generation steering. That's what connects the system.
+- What the features actually contain, measured with linear probes: see [results/phase2_features.md](results/phase2_features.md). Genre and energy are clearly present; **mood (as rendered by ACE-Step) is not.**
 
 ### 3. The user model: Bayesian Bradley-Terry
 - `P(you prefer A over B) = sigmoid(w · (x_A − x_B))`. `w` is your taste vector.
@@ -85,7 +88,13 @@ Most feedback is collected from a **pre-generated pool** (Phase 1). The live loo
 - The `personalization/` package is **pure** (no database, no web framework): `fit(pairs, X)` and `score(model, X)`. That makes it easy to test and to replay experiments offline.
 - Every stored embedding and model records its **model name/version**, so results stay reproducible when things change.
 
-### 7. Licenses
+### 7. Mood as context (decided in Phase 2)
+The listener's taste depends on their mood ("different music for different moods"). Phase 2 showed mood is *not* recoverable from the generated audio, so:
+- **Context comes from the listener**: each rating session records the mood or request they start with. It isn't inferred from audio.
+- **Phase 3 model comparison:** (a) one taste vector `w` for everything, vs. (b) a shared `w` plus a per-mood adjustment `w + Δ_mood`, with a prior that keeps each Δ small until there's evidence. Keep (b) only if it predicts held-out choices better. That's a concrete, reportable experiment.
+- **Future generation lever:** ACE-Step's `keyscale` parameter (major vs. minor) is a more reliable way to control mood than mood words in the prompt.
+
+### 8. Licenses
 | Component | License | Note |
 |---|---|---|
 | ACE-Step 1.5 | MIT | Generated audio is unrestricted |

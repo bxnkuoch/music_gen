@@ -1,12 +1,15 @@
 # The prompt grid for the pre-generated song pool (Phase 1).
 #
-# Every genre x mood x energy combination becomes one prompt (10 x 4 x 3 = 120),
-# and each prompt is generated with `seeds_per_prompt` different seeds (x3 = 360 clips,
-# about 1 hour on an M3). One instrument and one BPM are picked per prompt with a
+# Every genre x mood x energy combination becomes one prompt (15 x 4 x 3 = 180),
+# and each prompt is generated with `seeds_per_prompt` different seeds (x3 = 540 clips,
+# about 12 s each on an M3). One instrument and one BPM are picked per prompt with a
 # fixed random seed, so the grid is identical every time.
 #
-# Changing this file and re-running scripts/generate_pool.py only ADDS the new
-# prompts; existing songs are kept.
+# Re-running scripts/generate_pool.py only ADDS new prompts; existing songs are kept.
+#
+# APPEND-ONLY: add new genres at the END of `genres`, and don't edit existing ones.
+# Instruments/BPMs are drawn from one random stream in order, so inserting or editing
+# an earlier genre changes every prompt after it, and those would all be re-generated.
 
 random_seed: 42
 seeds_per_prompt: 3
@@ -24,6 +27,12 @@ genres:
   classical: [string quartet, solo piano, orchestral woodwinds]
   reggae: [offbeat guitar skank, deep dub bass, organ bubble]
   ambient: [evolving synth pads, granular textures, soft bells]
+  # Added in Phase 2 from the listener's stated favourites (styles described, not named):
+  lo-fi guitar: [plucked acoustic guitar, fingerpicked nylon guitar, mellow plucked electric guitar]
+  pop: [bright synth chords, punchy drums, catchy piano hooks]
+  hyperpop: [glitchy distorted synths, bitcrushed 808 bass, sparkly bell synths]
+  anime soundtrack: [soaring electric guitar and strings, emotional piano and strings, bright j-pop synths]
+  fantasy adventure video game: [ocarina and harp, orchestral strings and flute, 16-bit chiptune melody]
 
 moods: [chill, dark, uplifting, melancholic]
 

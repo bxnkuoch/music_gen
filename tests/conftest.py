@@ -45,5 +45,10 @@ def migrated_engine(db_url):
 def session_factory(migrated_engine) -> sessionmaker:
     """A clean, empty, fully migrated database for each test."""
     with migrated_engine.begin() as conn:
-        conn.execute(text("TRUNCATE songs, generation_jobs, prompts RESTART IDENTITY CASCADE"))
+        conn.execute(
+            text(
+                "TRUNCATE song_embeddings, song_features, songs, generation_jobs, prompts "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
     return sessionmaker(migrated_engine, expire_on_commit=False)

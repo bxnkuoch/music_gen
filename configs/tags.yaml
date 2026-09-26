@@ -1,0 +1,66 @@
+# Tag vocabulary: the words the system uses to describe music.
+#
+# Each tag gets a score per song = CLAP similarity between the song's audio and the
+# tag's `text`. These scores are features for the preference model (Phase 3) and,
+# later, the knobs for steering generation (Phase 4).
+#
+# Genre and mood tags reuse the pool grid's labels so we can measure how accurately
+# CLAP recognises them (docs/results/phase2_features.md).
+#
+# Bump `version` whenever tags change, so old and new scores never get mixed.
+
+version: 1
+
+categories:
+  genre:
+    r&b: r&b music
+    lo-fi hip hop: lo-fi hip hop music
+    synthwave: synthwave music
+    heavy metal: heavy metal music
+    acoustic folk: acoustic folk music
+    house: house music
+    jazz: jazz music
+    classical: classical music
+    reggae: reggae music
+    ambient: ambient music
+    lo-fi guitar: lo-fi guitar music
+    pop: pop music
+    hyperpop: hyperpop music
+    anime soundtrack: anime soundtrack music
+    fantasy adventure video game: fantasy adventure video game music
+
+  mood:
+    chill: chill music
+    dark: dark music
+    uplifting: uplifting music
+    melancholic: melancholic music
+    energetic: energetic music
+    dreamy: dreamy, nostalgic music
+
+  instrument:
+    piano: music featuring piano
+    acoustic guitar: music featuring acoustic guitar
+    plucked guitar: music with gently plucked guitar
+    electric guitar: music featuring electric guitar
+    distorted guitar: music with heavy distorted guitar
+    synthesizer: music featuring synthesizers
+    strings: music with orchestral strings
+    flute: music featuring flute or ocarina
+    harp: music featuring harp
+    808 bass: music with booming 808 bass
+    saxophone: music featuring saxophone
+    bells: music with chimes and bells
+    chiptune: 8-bit chiptune video game sounds
+    heavy drums: music with loud, heavy drums
+
+  character:
+    melodic: melodic music with a memorable melody
+    catchy: catchy music with a strong hook
+    lo-fi texture: lo-fi music with vinyl crackle and tape hiss
+    glitchy: glitchy, distorted, chaotic electronic music
+    punchy: punchy, tightly compressed music
+    spacious: spacious music with lots of reverb
+    minimal: sparse, minimal music
+    orchestral: grand orchestral music
+    bright: bright, sparkly music
+    warm: warm, mellow music

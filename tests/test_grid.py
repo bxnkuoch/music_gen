@@ -18,7 +18,7 @@ def raw() -> dict:
 def test_real_config_expands_to_full_grid(raw):
     grid = load_grid(CONFIG)
     expected = len(raw["genres"]) * len(raw["moods"]) * len(raw["energy"])
-    assert len(grid.prompts) == expected == 120
+    assert len(grid.prompts) == expected == 180
     assert grid.seeds_per_prompt == 3
     assert grid.duration_s == 30.0
 
@@ -30,6 +30,16 @@ def test_prompt_texts_are_unique(raw):
 
 def test_grid_is_deterministic(raw):
     assert build_prompts(raw) == build_prompts(copy.deepcopy(raw))
+
+
+def test_appending_a_genre_leaves_existing_prompts_unchanged(raw):
+    # The grid is append-only: otherwise already-generated songs would be regenerated.
+    shorter = copy.deepcopy(raw)
+    last_genre = list(shorter["genres"])[-1]
+    del shorter["genres"][last_genre]
+    before, after = build_prompts(shorter), build_prompts(raw)
+    assert after[: len(before)] == before
+    assert all(p.attributes["genre"] == last_genre for p in after[len(before) :])
 
 
 def test_different_random_seed_changes_choices(raw):
