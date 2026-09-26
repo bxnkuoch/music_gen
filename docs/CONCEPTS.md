@@ -83,3 +83,15 @@ A glossary for the ideas this project uses, written for someone meeting them for
 **Slate policy.** The rule that picks which 4 songs to show. Ours: 2 from Thompson sampling (the model's current best guesses, with some healthy randomness), 2 uniformly random (to keep exploring and keep the data fair for evaluation).
 
 **Blind evaluation.** You never see which songs the model picked. If you knew, you might (unconsciously) favor or punish them.
+
+## Generation terms (Phase 4)
+
+**Steering.** Nudging what gets generated toward your taste by adding words to the prompt ("…, plucked guitar, warm"). The words come from the tag weights of a taste vector sampled from the model.
+
+**Candidate generation + re-ranking.** Make more options than you'll show (8), then let the model pick the best (4). It's the standard design of recommender systems: a cheap, broad "candidate" step, then a precise "ranking" step.
+
+**A/B test (built in).** Each request slate has 2 steered and 2 plain songs, shuffled. If steering does nothing, you'd pick a steered song 50% of the time. Consistently more than 50% is evidence that personalization helps.
+
+**Wilson confidence interval.** A range for a win rate that stays honest with small counts. After 10 requests, even 7/10 steered picks gives a range of about 40–89%: not yet convincing. That's why ~100 requests are needed for a confident answer.
+
+**Worker process.** A separate program that does slow work (generating music) in the background. The web API just adds jobs to the database queue and reports progress.

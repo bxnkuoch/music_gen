@@ -298,3 +298,16 @@ def test_top_pick_quality_counts_ties_as_half(meta):
     u = user.utility(meta, "chill")
     expected = ((u < u[0]).sum() + 0.5 * (np.isclose(u, u[0]).sum() - 1)) / (len(u) - 1)
     assert top_pick_quality(flat, user, meta, ["chill"]) == pytest.approx(expected)
+
+
+def test_wilson_interval():
+    from music_gen.personalization.evaluation import wilson_interval
+
+    low, high = wilson_interval(50, 100)
+    assert low == pytest.approx(0.404, abs=0.002) and high == pytest.approx(0.596, abs=0.002)
+    assert wilson_interval(0, 0) == (0.0, 1.0)  # no data: anything is possible
+    low, high = wilson_interval(0, 10)
+    assert low == 0.0 and 0.2 < high < 0.35  # never negative, unlike the textbook formula
+    assert wilson_interval(10, 10)[1] == 1.0
+    with pytest.raises(ValueError):
+        wilson_interval(11, 10)

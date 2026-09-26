@@ -10,8 +10,8 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 | 1 | Generation pipeline + song pool in a database | ✅ |
 | 2 | Song representations (embeddings + interpretable features) | ✅ |
 | 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ✅ (now: collect ratings) |
-| 4 | Live generation + personalized candidate ranking | ⬜ **next** |
-| 5 | Exploration vs exploitation (Thompson sampling slates) | ⬜ |
+| 4 | Live generation + personalized candidate ranking | ✅ (now: collect A/B data) |
+| 5 | Exploration vs exploitation (Thompson sampling slates) | ⬜ **next** |
 | 6 | Reference songs + similarity search | ⬜ |
 | 7 | Evaluation experiments vs baselines | ⬜ |
 | 8 | Polished frontend + deployment | ⬜ |
@@ -101,10 +101,28 @@ bash scripts/start_app.sh          # then open http://localhost:3000
 - **Targets:** ~20 slates to see early signal, **~100+ for a solid learning curve**. Spread them over several sessions and moods (about 10 minutes = 10 slates).
 - After ~20 slates, check progress: `uv run python scripts/evaluate_ratings.py`
 
-## Phases 4–8
+## Phase 4: live generation + personalized ranking ✅
 
-**Phase 4 preview:** generate *new* songs for a request ("chill lo-fi for studying"): steer the prompt toward what the model has learned you like, generate 8 candidates, rank them with your model, and show the best. Your Phase 3 ratings carry over directly.
+- [x] **"Create new" tab**: type a request + pick a mood → 8 new songs are generated → the best 4 are shown blind → your pick trains the model
+- [x] Request parsing (`personalization/steering.py`, `configs/request_words.yaml`): keyword/alias matching onto the tag vocabulary, plus energy words → BPM range. No LLM.
+- [x] **Steering:** 4 of the 8 candidates add 2 tags picked from one Thompson sample of your learned taste each (never overriding the genre you asked for). The other 4 are plain (request only) = the non-personalized baseline
+- [x] **Ranking:** the model scores all 8; the slate shows the top 2 steered + top 2 plain, shuffled (random tie-break when the model knows nothing yet)
+- [x] **Worker process** (`scripts/worker.py`, `music_gen/worker.py`): generate → featurize → rank, communicating with the API only through the database job queue. Live requests jump ahead of pool jobs.
+- [x] `generation_requests` table; jobs record `request_id` + `variant` (steered/plain)
+- [x] The API picks up new songs automatically (`DbSongSource` reloads the song matrix when the song count changes)
+- [x] **Steering A/B metric** in `scripts/evaluate_ratings.py`: how often you pick a steered song (50% = no effect), with a Wilson 95% CI
+- [x] Real end-to-end run: 8 songs generated, featurized and ranked in **81 s** → [results/phase4_live_generation.md](results/phase4_live_generation.md)
+- [x] 11 new tests (198 fast total), including the full request → worker → slate flow, failure cases, and job priority
 
+### ▶️ What to do now
+```bash
+bash scripts/start_app.sh          # now also starts the worker; open http://localhost:3000
+```
+- Keep rating in **Rate library** (the model's taste gets sharper → better steering)
+- Use **Create new** whenever you want: each answered request is one data point for "does personalization help?"
+- **Targets:** ~30 answered requests for a first read on the A/B, ~100 for a confident one.
+
+## Phases 5–8
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design. Each phase gets a detailed checklist here when it starts.
 

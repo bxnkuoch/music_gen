@@ -73,3 +73,20 @@ def learning_curve(
 
 def _pairs_of(choice: Choice) -> list[Pair]:
     return to_pairs([choice])
+
+
+def wilson_interval(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% confidence interval for a win rate (e.g. "picked a steered song").
+
+    Wilson's interval stays sensible for small n and for rates near 0 or 1, unlike
+    the textbook p ± 1.96·sqrt(p(1-p)/n).
+    """
+    if n == 0:
+        return 0.0, 1.0
+    if not 0 <= wins <= n:
+        raise ValueError("wins must be between 0 and n")
+    p = wins / n
+    denominator = 1 + z**2 / n
+    centre = (p + z**2 / (2 * n)) / denominator
+    half = z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2)) / denominator
+    return float(max(0.0, centre - half)), float(min(1.0, centre + half))

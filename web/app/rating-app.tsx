@@ -1,27 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api, type Contexts, type Profile, type Slate } from "./api";
+import CreateView from "./create-view";
 import styles from "./page.module.css";
+import SlateView from "./slate-view";
 
-// A song counts as "heard" after this many seconds of playback. Answers are only
-// allowed once every song in the slate has been heard, to keep ratings honest.
-const MIN_LISTEN_SECONDS = 5;
-const LABELS = ["A", "B", "C", "D", "E", "F"];
+type Tab = "rate" | "create";
 
 export default function RatingApp() {
+  const [tab, setTab] = useState<Tab>("rate");
   const [contexts, setContexts] = useState<Contexts>({});
   const [session, setSession] = useState<{ id: number; context: string } | null>(null);
   const [slate, setSlate] = useState<Slate | null>(null);
-  const [heard, setHeard] = useState<Set<number>>(new Set());
-  const [favourite, setFavourite] = useState<number | null>(null);
-  const [worst, setWorst] = useState<number | null>(null);
   const [nRatings, setNRatings] = useState(0);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const players = useRef<Map<number, HTMLAudioElement>>(new Map());
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
@@ -33,9 +29,6 @@ export default function RatingApp() {
 
   const loadSlate = useCallback(async (sessionId: number) => {
     setSlate(await api.nextSlate(sessionId));
-    setHeard(new Set());
-    setFavourite(null);
-    setWorst(null);
   }, []);
 
   async function chooseMood(context: string) {
@@ -49,14 +42,18 @@ export default function RatingApp() {
     }
   }
 
-  async function submit() {
-    if (!slate || !session || favourite === null) return;
+  async function onRated(n: number) {
+    setNRatings(n);
+    if (n % 5 === 0) setProfile(await api.profile());
+  }
+
+  async function submit(favourite: number, worst: number | null) {
+    if (!slate || !session) return;
     setBusy(true);
     setError(null);
     try {
       const result = await api.answer(slate.slate_id, favourite, worst);
-      setNRatings(result.n_ratings);
-      if (result.n_ratings % 5 === 0) setProfile(await api.profile());
+      await onRated(result.n_ratings);
       await loadSlate(session.id);
     } catch (e) {
       report(e);
@@ -65,26 +62,23 @@ export default function RatingApp() {
     }
   }
 
-  function onPlay(songId: number) {
-    // Only one song plays at a time.
-    players.current.forEach((player, id) => id !== songId && player.pause());
-  }
-
-  function onTimeUpdate(songId: number, seconds: number) {
-    if (seconds >= MIN_LISTEN_SECONDS && !heard.has(songId)) {
-      setHeard((prev) => new Set(prev).add(songId));
-    }
-  }
-
-  const allHeard = slate !== null && slate.songs.every((s) => heard.has(s.song_id));
-
   return (
     <main className={styles.main}>
       <header className={styles.header}>
-        <h1>Which one do you like best?</h1>
+        <nav className={styles.tabs}>
+          <button className={tab === "rate" ? styles.tabActive : styles.tab} onClick={() => setTab("rate")}>
+            Rate library
+          </button>
+          <button
+            className={tab === "create" ? styles.tabActive : styles.tab}
+            onClick={() => setTab("create")}
+          >
+            Create new
+          </button>
+        </nav>
         <p className={styles.muted}>
           {nRatings} rating{nRatings === 1 ? "" : "s"} so far
-          {session && (
+          {tab === "rate" && session && (
             <>
               {" · mood: "}
               <strong>{session.context}</strong>{" "}
@@ -98,7 +92,7 @@ export default function RatingApp() {
 
       {error && <p className={styles.error}>⚠️ {error}</p>}
 
-      {!session && (
+      {tab === "rate" && !session && (
         <section>
           <h2>What mood are you in?</h2>
           <div className={styles.moods}>
@@ -112,65 +106,11 @@ export default function RatingApp() {
         </section>
       )}
 
-      {session && slate && (
-        <section>
-          <p className={styles.muted}>
-            Listen to each song for at least {MIN_LISTEN_SECONDS}s, pick your favourite
-            (and, if you like, your least favourite).
-          </p>
-          <ol className={styles.slate}>
-            {slate.songs.map((song, i) => (
-              <li key={song.song_id} className={styles.card}>
-                <div className={styles.cardTop}>
-                  <span className={styles.label}>{LABELS[i]}</span>
-                  {heard.has(song.song_id) ? "✓ heard" : "not heard yet"}
-                </div>
-                <audio
-                  controls
-                  preload="none"
-                  src={song.audio_url}
-                  ref={(el) => {
-                    if (el) players.current.set(song.song_id, el);
-                    else players.current.delete(song.song_id);
-                  }}
-                  onPlay={() => onPlay(song.song_id)}
-                  onTimeUpdate={(e) => onTimeUpdate(song.song_id, e.currentTarget.currentTime)}
-                />
-                <div className={styles.choices}>
-                  <label>
-                    <input
-                      type="radio"
-                      name="favourite"
-                      checked={favourite === song.song_id}
-                      onChange={() => {
-                        setFavourite(song.song_id);
-                        if (worst === song.song_id) setWorst(null);
-                      }}
-                    />{" "}
-                    Favourite
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={worst === song.song_id}
-                      disabled={favourite === song.song_id}
-                      onChange={(e) => setWorst(e.target.checked ? song.song_id : null)}
-                    />{" "}
-                    Least favourite
-                  </label>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <button
-            className={styles.submit}
-            disabled={!allHeard || favourite === null || busy}
-            onClick={submit}
-          >
-            {busy ? "Saving…" : allHeard ? "Submit & next" : "Listen to every song first"}
-          </button>
-        </section>
+      {tab === "rate" && session && slate && (
+        <SlateView key={slate.slate_id} slate={slate} busy={busy} onSubmit={submit} />
       )}
+
+      {tab === "create" && <CreateView contexts={contexts} onRated={onRated} />}
 
       {profile && profile.n_ratings > 0 && (
         <aside className={styles.profile}>

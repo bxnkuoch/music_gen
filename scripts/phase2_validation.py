@@ -39,10 +39,12 @@ ENERGY_LEVELS = {"low": 0, "medium": 1, "high": 2}
 
 
 def ground_truth(session) -> dict[int, dict]:
+    """Known attributes of every POOL song (live-request songs have no labels)."""
     rows = session.execute(
         select(Song.id, Prompt.id, Prompt.attributes, GenerationJob.bpm)
         .join(GenerationJob, Song.job_id == GenerationJob.id)
         .join(Prompt, GenerationJob.prompt_id == Prompt.id)
+        .where(Prompt.source == "pool_grid")
     ).all()
     return {sid: {"prompt_id": pid, "bpm": bpm, **attrs} for sid, pid, attrs, bpm in rows}
 
@@ -127,7 +129,7 @@ def probes(truth, session, settings, vocab) -> dict:
     )
     muq_ids, muq_emb = store.load_embeddings(session, f"muq-mulan:{settings.muq_model_id}")
     muq_lookup = dict(zip(muq_ids, muq_emb, strict=True))
-    keep = [i for i, sid in enumerate(ids) if sid in muq_lookup]
+    keep = [i for i, sid in enumerate(ids) if sid in muq_lookup and sid in truth]
     ids, clap_emb, tabular = [ids[i] for i in keep], clap_emb[keep], tabular[keep]
     muq_emb = np.stack([muq_lookup[sid] for sid in ids])
 
@@ -180,6 +182,8 @@ def main() -> None:
     with make_session_factory(settings.database_url)() as session:
         truth = ground_truth(session)
         sig_ids, sig_names, sig_values = store.load_features(session, signal.FEATURE_SET)
+        pool = [i for i, sid in enumerate(sig_ids) if sid in truth]
+        sig_ids, sig_values = [sig_ids[i] for i in pool], sig_values[pool]
         results["bpm"] = bpm_adherence(truth, sig_ids, sig_names, sig_values)
 
         results["embeddings"] = {}
@@ -190,6 +194,8 @@ def main() -> None:
                 continue
             tag_ids, tag_names, tag_scores = store.load_features(session, vocab.feature_set(model))
             assert tag_ids == ids, "tags and embeddings cover different songs"
+            pool = [i for i, sid in enumerate(ids) if sid in truth]
+            ids, emb, tag_scores = [ids[i] for i in pool], emb[pool], tag_scores[pool]
             # load_features sorts names; reorder columns to vocabulary order
             tag_scores = tag_scores[:, [tag_names.index(n) for n in vocab.names]]
             energy = np.array([ENERGY_LEVELS[truth[s]["energy"]] for s in ids])

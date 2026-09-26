@@ -33,6 +33,14 @@ class Generator(Protocol):
     def generate(self, request: GenerationRequest) -> GeneratedClip: ...
 
 
+@dataclass(frozen=True)
+class JobOutcome:
+    job_id: int
+    song_id: int | None  # None if the job failed
+    error: str | None = None
+    elapsed_s: float = 0.0
+
+
 @dataclass
 class RunSummary:
     generated: int = 0
@@ -93,7 +101,7 @@ def run_pending(
 ) -> RunSummary:
     """Generate every pending job (or at most `limit` of them)."""
     with session_factory() as session:
-        _requeue(session, max_attempts)
+        requeue(session, max_attempts)
         total = session.scalar(select(func.count()).where(GenerationJob.status == "pending"))
     if limit is not None:
         total = min(total, limit)
@@ -102,20 +110,12 @@ def run_pending(
     summary = RunSummary()
     consecutive_failures = 0
     while limit is None or summary.generated + summary.failed < limit:
-        claimed = _claim_next_job(session_factory)
-        if claimed is None:
+        outcome = process_next_job(session_factory, generator, data_dir)
+        if outcome is None:
             break
-        job_id, request_kwargs = claimed
         done = summary.generated + summary.failed + 1
-
-        try:
-            request = GenerationRequest(**request_kwargs)
-            clip = generator.generate(request)
-            rel_path = POOL_AUDIO_DIR / f"job_{job_id:06d}.wav"
-            _write_atomically(clip, data_dir / rel_path)
-        except Exception as e:  # noqa: BLE001 - one bad job must not kill the run
-            logger.exception("[%d/%d] job %d failed", done, total, job_id)
-            _mark_failed(session_factory, job_id, f"{type(e).__name__}: {e}")
+        if outcome.song_id is None:
+            logger.error("[%d/%d] job %d failed: %s", done, total, outcome.job_id, outcome.error)
             summary.failed += 1
             consecutive_failures += 1
             if consecutive_failures >= max_consecutive_failures:
@@ -126,15 +126,38 @@ def run_pending(
                 summary.stopped_early = True
                 break
             continue
-
-        _record_song(session_factory, job_id, clip, rel_path)
         summary.generated += 1
         consecutive_failures = 0
-        logger.info("[%d/%d] job %d done in %.1fs", done, total, job_id, clip.elapsed_s)
+        logger.info("[%d/%d] job %d done in %.1fs", done, total, outcome.job_id, outcome.elapsed_s)
     return summary
 
 
-def _requeue(session: Session, max_attempts: int) -> None:
+def process_next_job(
+    session_factory: sessionmaker, generator: Generator, data_dir: Path
+) -> JobOutcome | None:
+    """Claim the next pending job, generate it, and save the song. None if no work.
+
+    Shared by the pool runner and the live-request worker. Never raises for a bad
+    job: failures are recorded on the job and returned.
+    """
+    claimed = _claim_next_job(session_factory)
+    if claimed is None:
+        return None
+    job_id, request_kwargs = claimed
+    try:
+        clip = generator.generate(GenerationRequest(**request_kwargs))
+        rel_path = POOL_AUDIO_DIR / f"job_{job_id:06d}.wav"
+        _write_atomically(clip, data_dir / rel_path)
+    except Exception as e:  # noqa: BLE001 - one bad job must not kill the run
+        logger.debug("job %d failed", job_id, exc_info=True)
+        error = f"{type(e).__name__}: {e}"
+        _mark_failed(session_factory, job_id, error)
+        return JobOutcome(job_id, None, error)
+    song_id = _record_song(session_factory, job_id, clip, rel_path)
+    return JobOutcome(job_id, song_id, elapsed_s=clip.elapsed_s)
+
+
+def requeue(session: Session, max_attempts: int) -> None:
     """Put crashed ('running') and retryable failed jobs back in the queue."""
     stale = session.execute(
         update(GenerationJob).where(GenerationJob.status == "running").values(status="pending")
@@ -154,7 +177,8 @@ def _claim_next_job(session_factory: sessionmaker) -> tuple[int, dict] | None:
         job = session.scalars(
             select(GenerationJob)
             .where(GenerationJob.status == "pending")
-            .order_by(GenerationJob.id)
+            # Live requests first (someone is waiting for them), then pool jobs.
+            .order_by(GenerationJob.request_id.is_(None), GenerationJob.id)
             .limit(1)
             .with_for_update(skip_locked=True)  # safe if two runners ever overlap
         ).first()
@@ -183,22 +207,22 @@ def _write_atomically(clip: GeneratedClip, path: Path) -> None:
 
 def _record_song(
     session_factory: sessionmaker, job_id: int, clip: GeneratedClip, rel_path: Path
-) -> None:
+) -> int:
     with session_factory() as session:  # song row + status change commit together
         job = session.get(GenerationJob, job_id)
         job.status = "done"
         job.error = None
-        session.add(
-            Song(
-                job_id=job_id,
-                audio_path=str(rel_path),
-                duration_s=clip.duration_s,
-                sample_rate=clip.sample_rate,
-                generation_time_s=clip.elapsed_s,
-                loudness_dbfs=audio.rms_dbfs(clip.audio),
-            )
+        song = Song(
+            job_id=job_id,
+            audio_path=str(rel_path),
+            duration_s=clip.duration_s,
+            sample_rate=clip.sample_rate,
+            generation_time_s=clip.elapsed_s,
+            loudness_dbfs=audio.rms_dbfs(clip.audio),
         )
+        session.add(song)
         session.commit()
+        return song.id
 
 
 def _mark_failed(session_factory: sessionmaker, job_id: int, error: str) -> None:

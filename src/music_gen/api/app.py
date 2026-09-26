@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from music_gen import audio
+from music_gen.api.requests import RequestService
 from music_gen.api.service import InvalidAnswer, Recommender, SlateAlreadyAnswered, SlateNotFound
 from music_gen.db import RatingSession, Slate, Song
 
@@ -56,7 +57,42 @@ class AnswerOut(BaseModel):
     n_ratings: int
 
 
-def create_app(session_factory: sessionmaker, recommender: Recommender, data_dir: Path) -> FastAPI:
+class CreateRequest(BaseModel):
+    text: str
+    context: str
+
+
+class RequestOut(BaseModel):
+    request_id: int
+    tags: list[str]  # what the parser understood, shown back to the listener
+    energy: str | None
+
+
+class RequestStatusOut(BaseModel):
+    status: str  # generating | ready | failed
+    n_done: int
+    n_failed: int
+    n_total: int
+    slate: SlateOut | None  # once ready. Steered/plain labels are never sent: blind.
+    error: str | None
+
+
+def slate_out(slate: Slate) -> SlateOut:
+    return SlateOut(
+        slate_id=slate.id,
+        songs=[
+            SongOut(song_id=item.song_id, audio_url=f"/api/songs/{item.song_id}/audio")
+            for item in slate.items
+        ],
+    )
+
+
+def create_app(
+    session_factory: sessionmaker,
+    recommender: Recommender,
+    data_dir: Path,
+    requests: RequestService | None = None,
+) -> FastAPI:
     app = FastAPI(title="Adaptive music rating API")
 
     def db() -> Iterator[Session]:
@@ -83,13 +119,7 @@ def create_app(session_factory: sessionmaker, recommender: Recommender, data_dir
             slate = recommender.next_slate(session, session_id)
         except SlateNotFound as e:
             raise HTTPException(404, str(e)) from e
-        return SlateOut(
-            slate_id=slate.id,
-            songs=[
-                SongOut(song_id=item.song_id, audio_url=f"/api/songs/{item.song_id}/audio")
-                for item in slate.items
-            ],
-        )
+        return slate_out(slate)
 
     @app.post("/api/slates/{slate_id}/answer", response_model=AnswerOut)
     def answer(slate_id: int, body: Answer, session: Db) -> AnswerOut:
@@ -119,6 +149,35 @@ def create_app(session_factory: sessionmaker, recommender: Recommender, data_dir
             os.replace(partial, path)  # atomic: never serve a half-written file
         return FileResponse(path, media_type="audio/wav")
 
+    @app.post("/api/requests", response_model=RequestOut)
+    def create_request(body: CreateRequest, session: Db) -> RequestOut:
+        if requests is None:
+            raise HTTPException(503, "live generation isn't enabled on this server")
+        try:
+            request = requests.create(session, body.text, body.context)
+        except InvalidAnswer as e:
+            raise HTTPException(422, str(e)) from e
+        return RequestOut(
+            request_id=request.id, tags=request.parsed["tags"], energy=request.parsed["energy"]
+        )
+
+    @app.get("/api/requests/{request_id}", response_model=RequestStatusOut)
+    def request_status(request_id: int, session: Db) -> RequestStatusOut:
+        if requests is None:
+            raise HTTPException(503, "live generation isn't enabled on this server")
+        try:
+            status = requests.status(session, request_id)
+        except SlateNotFound as e:
+            raise HTTPException(404, str(e)) from e
+        return RequestStatusOut(
+            status=status.status,
+            n_done=status.n_done,
+            n_failed=status.n_failed,
+            n_total=status.n_total,
+            slate=slate_out(status.slate) if status.slate else None,
+            error=status.error,
+        )
+
     @app.get("/api/profile")
     def profile(session: Db) -> dict:
         return recommender.profile(session)
@@ -143,15 +202,25 @@ def build_app() -> FastAPI:
     from music_gen.db import make_session_factory
     from music_gen.features.space import FeatureSpace
     from music_gen.features.tags import load_tags
+    from music_gen.generation.acestep import MODEL_NAME
     from music_gen.logging_setup import configure_logging
-    from music_gen.personalization.data import load_contexts, load_song_matrix
+    from music_gen.personalization.data import DbSongSource, load_contexts
+    from music_gen.personalization.steering import load_request_words
 
     settings = get_settings()
     configure_logging(settings.log_level)
     session_factory = make_session_factory(settings.database_url)
     space = FeatureSpace.load(settings.data_dir / "models" / "feature_space_v1.npz")
+    vocab = load_tags(Path("configs/tags.yaml"))
+    source = DbSongSource(space, vocab)
     with session_factory() as session:
-        songs = load_song_matrix(session, space, load_tags(Path("configs/tags.yaml")))
+        songs = source.load(session)
     logger.info("Loaded %d songs x %d features", *songs.x.shape)
-    contexts = load_contexts(Path("configs/contexts.yaml"))
-    return create_app(session_factory, Recommender(songs, contexts), settings.data_dir)
+    recommender = Recommender(songs, load_contexts(Path("configs/contexts.yaml")), source=source)
+    requests = RequestService(
+        recommender,
+        vocab,
+        load_request_words(Path("configs/request_words.yaml"), vocab),
+        MODEL_NAME,
+    )
+    return create_app(session_factory, recommender, settings.data_dir, requests)

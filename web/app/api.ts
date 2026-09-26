@@ -36,3 +36,22 @@ export const api = {
       body: JSON.stringify({ chosen_song_id: chosen, worst_song_id: worst }),
     }),
 };
+
+export type RequestCreated = { request_id: number; tags: string[]; energy: string | null };
+export type RequestStatus = {
+  status: "generating" | "ready" | "failed";
+  n_done: number;
+  n_failed: number;
+  n_total: number;
+  slate: Slate | null;
+  error: string | null;
+};
+
+export const requestsApi = {
+  create: (text: string, context: string) =>
+    call<RequestCreated>("/api/requests", {
+      method: "POST",
+      body: JSON.stringify({ text, context }),
+    }),
+  status: (requestId: number) => call<RequestStatus>(`/api/requests/${requestId}`),
+};

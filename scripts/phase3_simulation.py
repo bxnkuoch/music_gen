@@ -46,10 +46,8 @@ N_SLATES = 150
 HIDDEN_DIMS = 16
 
 
-def hidden_features(session, settings, song_ids: np.ndarray) -> np.ndarray:
+def hidden_features(lookup: dict[int, np.ndarray], song_ids: np.ndarray) -> np.ndarray:
     """Standardized MuQ-MuLan PCs: taste the model can only partly see."""
-    ids, emb = store.load_embeddings(session, f"muq-mulan:{settings.muq_model_id}")
-    lookup = dict(zip(ids, emb, strict=True))
     muq = np.stack([lookup[s] for s in song_ids])
     centered = muq - muq.mean(axis=0)
     pcs = centered @ np.linalg.svd(centered, full_matrices=False)[2][:HIDDEN_DIMS].T
@@ -103,10 +101,14 @@ def main() -> None:
     space = FeatureSpace.load(settings.data_dir / "models" / "feature_space_v1.npz")
     with make_session_factory(settings.database_url)() as session:
         songs = load_song_matrix(session, space, load_tags(Path("configs/tags.yaml")))
+        ids, emb = store.load_embeddings(session, f"muq-mulan:{settings.muq_model_id}")
+        muq = dict(zip(ids, emb, strict=True))
+        # Only songs with MuQ embeddings (the pool; live-request songs get CLAP only).
+        songs = songs.subset(np.array([sid in muq for sid in songs.song_ids]))
         meta = SongMeta(
             songs.genres,
             songs.energies,
-            hidden_features(session, settings, songs.song_ids),
+            hidden_features(muq, songs.song_ids),
             songs.groups,
         )
     x = songs.x

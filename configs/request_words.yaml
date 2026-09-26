@@ -1,0 +1,35 @@
+# How free-text requests ("chill lofi for studying") map onto the tag vocabulary.
+#
+# Tag names from configs/tags.yaml are always recognised as-is. These are extra
+# phrases (lowercase) that mean the same thing. Matching is whole-word, longest
+# phrase first, so "lofi guitar" wins over "lofi", and "pop" doesn't match "hyperpop".
+#
+# Editing this file doesn't change any stored features: safe to extend any time.
+
+aliases:
+  lo-fi hip hop: [lofi, lo fi, lo-fi, lofi hip hop, lofi beats, chillhop]
+  lo-fi guitar: [lofi guitar, lo-fi guitar, lo fi guitar]
+  heavy metal: [metal]
+  r&b: [rnb, r and b]
+  hyperpop: [hyper pop]
+  anime soundtrack: [anime, anime music, j-pop, jpop]
+  fantasy adventure video game: [video game, game music, rpg, zelda, adventure game]
+  acoustic folk: [folk]
+  synthwave: [retrowave, 80s synth]
+  classical: [orchestra]
+  plucked guitar: [guitar plucking, plucking guitar, fingerpicked guitar, fingerpicking]
+  chiptune: [8-bit, 8 bit, chiptunes]
+  808 bass: ["808", "808s"]
+  melancholic: [sad, melancholy]
+  uplifting: [happy, hopeful]
+  energetic: [hype, pumped, upbeat]
+  dreamy: [nostalgic]
+
+# Words that set the tempo range when present (BPM ranges match the pool grid).
+energy:
+  low:
+    words: [slow, relaxed, calm, sleepy, sleep, chill, mellow, gentle, study, studying]
+    bpm: [65, 85]
+  high:
+    words: [fast, energetic, hype, intense, workout, upbeat, pumped, party]
+    bpm: [120, 150]

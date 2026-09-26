@@ -5,10 +5,10 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from music_gen.db import GenerationJob, Prompt, Song
+from music_gen.db import GenerationJob, Prompt, Song, SongEmbedding
 from music_gen.features import signal, store
 from music_gen.features.space import FeatureSpace
 from music_gen.features.tags import TagVocabulary
@@ -31,6 +31,16 @@ class SongMatrix:
     groups: np.ndarray  # prompt id per song (to avoid near-duplicates in a slate)
     genres: np.ndarray
     energies: np.ndarray
+
+    def subset(self, rows: np.ndarray) -> "SongMatrix":
+        return SongMatrix(
+            self.song_ids[rows],
+            self.x[rows],
+            self.names,
+            self.groups[rows],
+            self.genres[rows],
+            self.energies[rows],
+        )
 
     def row_of(self, song_id: int) -> int:
         rows = np.flatnonzero(self.song_ids == song_id)
@@ -63,3 +73,20 @@ def load_song_matrix(session: Session, space: FeatureSpace, vocab: TagVocabulary
         genres=np.array([meta[s][1].get("genre", "?") for s in ids]),
         energies=np.array([meta[s][1].get("energy", "?") for s in ids]),
     )
+
+
+class DbSongSource:
+    """Loads the song matrix from the database, and tells when it's out of date
+    (new songs were featurized, e.g. by the live-request worker)."""
+
+    def __init__(self, space: FeatureSpace, vocab: TagVocabulary) -> None:
+        self.space = space
+        self.vocab = vocab
+
+    def version(self, session: Session) -> int:
+        return session.scalar(
+            select(func.count()).where(SongEmbedding.model_name == self.space.embedding_model)
+        )
+
+    def load(self, session: Session) -> SongMatrix:
+        return load_song_matrix(session, self.space, self.vocab)

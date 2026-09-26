@@ -105,7 +105,21 @@ Browser (Next.js, web/) ──/api/* proxy──► FastAPI (api/app.py → api/
 - **Logged randomness:** half of each slate is uniformly random. That keeps exploring and provides unbiased data for evaluation.
 - **Serving model:** global Bayesian BT (prior variance 0.01, chosen by simulation). The per-mood model is evaluated alongside it on real data.
 
-### 9. Licenses
+### 9. Live requests (Phase 4)
+```
+Browser ──POST /api/requests──► API: parse text → sample 4 tastes → 4 steered + 4 plain jobs
+                                       │ (job queue in Postgres)
+                               Worker: generate → featurize (CLAP, tags, signal) → when all 8
+                                       are done, rank with the model → slate (2 steered + 2 plain)
+Browser ◄─GET /api/requests/{id} (poll)── status + slate → answer → trains the model
+```
+- **Why a separate worker:** it holds the ~10 GB music model and takes about 80 s per request. The API stays instant, and either process can restart without losing work (the job queue survives).
+- **Why 2 + 2 instead of "best 4 of 8":** holding the ranking fixed and splitting the slate turns every request into a blind A/B trial of *steered vs plain generation*. That's the project's headline question ("does personalization help?") answered with the listener's own choices, not a proxy metric.
+- **Steering is "suggest, then verify":** tag weights from a sampled taste propose modifiers, then the full 81-feature model ranks the *actual audio*. A bad suggestion (e.g. "glitchy") just gets ranked low.
+- **Genre stays the listener's call:** steering only adds instrument / character / mood tags.
+- **Same BPM for all 8 candidates of a request**, so tempo can't confound the A/B.
+
+### 10. Licenses
 | Component | License | Note |
 |---|---|---|
 | ACE-Step 1.5 | MIT | Generated audio is unrestricted |

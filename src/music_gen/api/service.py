@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from music_gen.db import RatingSession, Slate, SlateItem
-from music_gen.personalization.data import SongMatrix
+from music_gen.personalization.data import DbSongSource, SongMatrix
 from music_gen.personalization.models import BradleyTerryModel
 from music_gen.personalization.pairs import Choice, to_pairs
 from music_gen.personalization.policy import POLICY_NAME, select_slate
@@ -39,7 +39,11 @@ class Recommender:
         rng: np.random.Generator | None = None,
         slate_size: int = 4,
         n_model: int = 2,
+        source: DbSongSource | None = None,
     ) -> None:
+        """source: if given, the song matrix is reloaded whenever new songs appear."""
+        self.source = source
+        self._songs_version: int | None = None
         self.songs = songs
         self.contexts = contexts
         self.rng = rng or np.random.default_rng()
@@ -66,7 +70,16 @@ class Recommender:
             choices.append(Choice(shown, chosen, slate.session.context, worst, slate.session_id))
         return choices
 
+    def refresh(self, session: Session) -> None:
+        if self.source is None:
+            return
+        version = self.source.version(session)
+        if version != self._songs_version:
+            self.songs = self.source.load(session)
+            self._songs_version = version
+
     def fitted_model(self, session: Session) -> tuple[BradleyTerryModel, int]:
+        self.refresh(session)
         choices = self.load_choices(session)
         model = BradleyTerryModel(self.songs.x, list(self.contexts), per_context=False)
         model.fit(to_pairs(choices))

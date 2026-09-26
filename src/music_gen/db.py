@@ -67,6 +67,7 @@ class GenerationJob(Base):
             postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint(f"status IN {JOB_STATUSES}", name="valid_status"),
+        CheckConstraint("variant IS NULL OR variant IN ('steered', 'plain')", name="valid_variant"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -79,6 +80,11 @@ class GenerationJob(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+    # Set for live requests (Phase 4); NULL for pool jobs.
+    request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("generation_requests.id", name="generation_jobs_request_id_fkey"), index=True
+    )
+    variant: Mapped[str | None] = mapped_column(String(16))  # "steered" | "plain"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -128,6 +134,28 @@ class SongFeatures(Base):
     feature_set: Mapped[str] = mapped_column(String(160), primary_key=True)
     values: Mapped[dict[str, float]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+REQUEST_STATUSES = ("generating", "ready", "failed")
+
+
+class ListenerRequest(Base):
+    """A listener's request for new songs, e.g. "chill lofi for studying"."""
+
+    __tablename__ = "generation_requests"
+    __table_args__ = (CheckConstraint(f"status IN {REQUEST_STATUSES}", name="valid_status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    parsed: Mapped[dict[str, Any]] = mapped_column(JSONB)  # tags + energy found in the text
+    # Each request gets its own rating session; its result slate lives in that session.
+    session_id: Mapped[int] = mapped_column(ForeignKey("rating_sessions.id"), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="generating", index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    jobs: Mapped[list["GenerationJob"]] = relationship(order_by="GenerationJob.id")
+    rating_session: Mapped["RatingSession"] = relationship()
 
 
 class RatingSession(Base):
