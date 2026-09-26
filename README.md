@@ -2,7 +2,7 @@
 
 A music system that **learns one listener's taste** from "A or B?" feedback and uses that learned taste to **steer generation** and **rank candidate songs**. Open-source models generate and embed the audio. The preference learning, exploration strategy and evaluation are built from scratch.
 
-> **Status:** Phases 0–2 of 8 are complete: model stack benchmarked, a 540-song pool in PostgreSQL, and validated song features plus similar-song search (pgvector). See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
+> **Status:** Phases 0–3 of 8 are complete. The rating app works end to end: a 540-song pool, validated features, and a Bayesian preference model that beats the standard baseline in simulation. **Now collecting real ratings.** See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
 
 ## Why this is more than "call a music API"
 
@@ -56,6 +56,12 @@ uv run python scripts/phase2_validation.py
 # Find songs similar to song 42
 uv run python scripts/similar_songs.py 42
 
+# 8. Rate songs! (starts database + API + web page; open http://localhost:3000)
+bash scripts/start_app.sh
+
+# 9. After ~20 ratings: does the model predict your choices?
+uv run python scripts/evaluate_ratings.py
+
 # Optional: reproduce the Phase 0 benchmark (~5 min)
 uv run python scripts/phase0_benchmark.py
 ```
@@ -71,11 +77,14 @@ src/music_gen/
   audio.py             audio validation, mono/resample, WAV I/O
   pool/                prompt grid + resumable pool generation
   features/            signal features, tag scores, feature space, pgvector search
+  personalization/     Bayesian Bradley-Terry, baselines, slate policy, simulation, evaluation
+  api/                 FastAPI rating API (service logic + HTTP layer)
+web/                   Next.js + TypeScript rating page
   generation/          ACE-Step wrapper: seeded, validated generation
   embeddings/          CLAP + MuQ-MuLan wrappers (deterministic, L2-normalized)
 tests/                 fast unit tests (fakes) + @slow tests (real models)
 scripts/               pool generation, benchmark, model download
-configs/               pool_grid.yaml (what the pool contains), tags.yaml (tag vocabulary)
+configs/               pool_grid.yaml (the pool), tags.yaml (tag vocabulary), contexts.yaml (moods)
 alembic/               database migrations (schema history)
 docker-compose.yml     PostgreSQL + pgvector
 docs/
@@ -89,9 +98,10 @@ data/                  (git-ignored) model weights, audio, raw results
 
 ## Testing
 
-- `uv run pytest`: **120 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, missing weights). Feature tests use signals with known answers (click tracks at a known BPM, sines of known loudness). Database tests cover migrations matching the models, constraints, crash and resume, no duplicates, and pgvector search ordering, using a separate test database. They're skipped, with a message, if Postgres isn't running.
+- `uv run pytest`: **165 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, missing weights). Feature tests use signals with known answers (click tracks at a known BPM, sines of known loudness). Preference-learning tests check that the model recovers known tastes (including opposite tastes in different moods). API tests drive the whole rating loop over HTTP. Database tests cover migrations, constraints, crash and resume, and pgvector search, using a separate test database. They're skipped, with a message, if Postgres isn't running.
 - `uv run pytest -m slow`: **4 integration tests** with the real models. They include a regression test for a broken CLAP checkpoint, and a check that our MuQ compatibility patch reproduces the original model's outputs.
-- `uv run ruff check . && uv run ruff format --check .`: lint and formatting.
+- `uv run ruff check . && uv run ruff format --check .`: Python lint and formatting.
+- `cd web && npm run lint && npx tsc --noEmit`: frontend lint and type-check.
 
 ## Licenses
 

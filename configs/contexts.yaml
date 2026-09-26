@@ -1,0 +1,11 @@
+# Moods ("contexts") the listener picks from at the start of a rating session.
+# The per-mood model learns a taste adjustment for each one.
+#
+# Safe to ADD moods at any time. Renaming or removing one orphans its past ratings.
+
+contexts:
+  chill: relaxing, winding down
+  focus: studying or working
+  hype: energetic, working out, getting pumped
+  happy: good mood, upbeat
+  sad: reflective, melancholic

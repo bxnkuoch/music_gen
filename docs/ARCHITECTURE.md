@@ -94,7 +94,18 @@ The listener's taste depends on their mood ("different music for different moods
 - **Phase 3 model comparison:** (a) one taste vector `w` for everything, vs. (b) a shared `w` plus a per-mood adjustment `w + Δ_mood`, with a prior that keeps each Δ small until there's evidence. Keep (b) only if it predicts held-out choices better. That's a concrete, reportable experiment.
 - **Future generation lever:** ACE-Step's `keyscale` parameter (major vs. minor) is a more reliable way to control mood than mood words in the prompt.
 
-### 8. Licenses
+### 8. The rating app (Phase 3)
+```
+Browser (Next.js, web/) ──/api/* proxy──► FastAPI (api/app.py → api/service.py) ──► Postgres
+                                                     │
+                                  personalization/ (pure NumPy: fit, select, evaluate)
+```
+- **Refit on every slate:** with a few hundred ratings the global model fits in milliseconds, so there's no model cache to go stale. Each slate records `n_training_choices`, so what the model knew when it picked is auditable.
+- **Blind rating:** `source` (model/random) and `score` live only in `slate_items`; the API never sends them to the browser.
+- **Logged randomness:** half of each slate is uniformly random. That keeps exploring and provides unbiased data for evaluation.
+- **Serving model:** global Bayesian BT (prior variance 0.01, chosen by simulation). The per-mood model is evaluated alongside it on real data.
+
+### 9. Licenses
 | Component | License | Note |
 |---|---|---|
 | ACE-Step 1.5 | MIT | Generated audio is unrestricted |

@@ -54,6 +54,24 @@ def rms_dbfs(audio: np.ndarray) -> float:
     return 20 * np.log10(rms) if rms > 0 else float("-inf")
 
 
+def normalize_loudness(
+    audio_array: np.ndarray, target_dbfs: float = -20.0, peak_ceiling: float = 0.98
+) -> np.ndarray:
+    """Scale audio to a target average loudness, without clipping.
+
+    People tend to prefer whichever option is louder, so every clip in a slate is
+    played at the same loudness. If reaching the target would clip, the gain stops at
+    the peak ceiling (the clip ends up slightly quieter than the target).
+    """
+    current = rms_dbfs(audio_array)
+    if current == float("-inf"):
+        return audio_array  # digital silence: nothing to scale
+    gain = 10 ** ((target_dbfs - current) / 20)
+    peak = float(np.abs(audio_array).max())
+    gain = min(gain, peak_ceiling / peak)
+    return (audio_array * gain).astype(np.float32)
+
+
 def save_wav(audio: np.ndarray, sample_rate: int, path: Path) -> Path:
     validate(audio, sample_rate)
     path.parent.mkdir(parents=True, exist_ok=True)

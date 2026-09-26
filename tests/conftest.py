@@ -47,7 +47,8 @@ def session_factory(migrated_engine) -> sessionmaker:
     with migrated_engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE song_embeddings, song_features, songs, generation_jobs, prompts "
+                "TRUNCATE slate_items, slates, rating_sessions, song_embeddings, song_features, "
+                "songs, generation_jobs, prompts "
                 "RESTART IDENTITY CASCADE"
             )
         )

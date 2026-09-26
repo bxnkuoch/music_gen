@@ -66,3 +66,21 @@ def test_save_wav_refuses_corrupt_audio(tmp_path):
     with pytest.raises(audio.AudioError):
         audio.save_wav(np.full(48_000, np.nan, dtype=np.float32), 48_000, tmp_path / "x.wav")
     assert not (tmp_path / "x.wav").exists()
+
+
+def test_normalize_loudness_hits_target():
+    quiet = chord_with_noise(2.0, 48_000) * 0.05
+    assert audio.rms_dbfs(audio.normalize_loudness(quiet, target_dbfs=-20)) == pytest.approx(-20)
+
+
+def test_normalize_loudness_never_clips():
+    spiky = np.zeros(48_000, dtype=np.float32)
+    spiky[::4800] = 0.9  # quiet on average, but with big peaks
+    out = audio.normalize_loudness(spiky, target_dbfs=-10, peak_ceiling=0.98)
+    assert np.abs(out).max() <= 0.98 + 1e-6
+    assert audio.rms_dbfs(out) < -10  # couldn't reach the target without clipping
+
+
+def test_normalize_loudness_leaves_silence_alone():
+    silence = np.zeros(1000, dtype=np.float32)
+    np.testing.assert_array_equal(audio.normalize_loudness(silence), silence)

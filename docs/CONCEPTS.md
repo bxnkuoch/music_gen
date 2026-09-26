@@ -69,3 +69,17 @@ A glossary for the ideas this project uses, written for someone meeting them for
 **Grouped cross-validation.** Split data so related items (the 3 seeds of one prompt) are always on the same side of the train/test split. Otherwise the test is too easy, because the model has already seen a near-copy.
 
 **Octave error.** A tempo estimator reporting half or double the true BPM (e.g. 70 vs 140). It's common and understandable, because both fit the beat.
+
+## Learning terms (Phase 3)
+
+**Prior variance.** How far the model expects your taste weights to stray from zero before seeing data. Small = cautious (needs more evidence before believing a feature matters). We tried 0.01–1.0 in simulation. It barely mattered, and 0.01 was slightly best.
+
+**Newton's method (damped).** The algorithm that finds the most likely taste vector. It jumps toward the best answer using the curve's slope and curvature, and halves the jump if a step would make things worse ("damped"), so it never diverges.
+
+**Oracle.** A cheating model that knows a simulated listener's true taste. Because choices are noisy, even the oracle is only right ~78% of the time. That's the ceiling, so 64% means "about half way from coin-flip to perfect".
+
+**Per-mood model.** Taste = shared taste + a small mood-specific adjustment. It can learn "I like energetic music when hyped, calm music when chilling", but it needs more ratings, because each mood's adjustment only learns from that mood's ratings.
+
+**Slate policy.** The rule that picks which 4 songs to show. Ours: 2 from Thompson sampling (the model's current best guesses, with some healthy randomness), 2 uniformly random (to keep exploring and keep the data fair for evaluation).
+
+**Blind evaluation.** You never see which songs the model picked. If you knew, you might (unconsciously) favor or punish them.

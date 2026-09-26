@@ -9,8 +9,8 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 | 0 | Research + benchmark the model stack | ✅ |
 | 1 | Generation pipeline + song pool in a database | ✅ |
 | 2 | Song representations (embeddings + interpretable features) | ✅ |
-| 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ⬜ **next** |
-| 4 | Live generation + personalized candidate ranking | ⬜ |
+| 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ✅ (now: collect ratings) |
+| 4 | Live generation + personalized candidate ranking | ⬜ **next** |
 | 5 | Exploration vs exploitation (Thompson sampling slates) | ⬜ |
 | 6 | Reference songs + similarity search | ⬜ |
 | 7 | Evaluation experiments vs baselines | ⬜ |
@@ -77,18 +77,34 @@ uv run python scripts/phase2_validation.py       # re-measure feature quality
 uv run python scripts/similar_songs.py 42        # songs similar to song 42
 ```
 
-## Phase 3: ratings and preference learning (core of the MVP) ⬜
+## Phase 3: ratings and preference learning ✅
 
-- [ ] Minimal rating page: 4 clips per round, pick your favorite (and optionally your least favorite), in shuffled order, **loudness-normalized playback** (Phase 1 found about 16 dB spread; louder clips tend to win comparisons)
-- [ ] Log every **slate**: what was shown, in what order, which strategy chose it
-- [ ] Turn feedback into pairwise preferences ("the favorite beat each other clip")
-- [ ] Session start: the listener picks their current **mood/context** (stored with every slate)
-- [ ] **Bayesian Bradley-Terry model** (`personalization/`): pure NumPy, online Laplace updates
-- [ ] Compare one global taste vs. **shared taste + per-mood adjustment** on held-out choices
-- [ ] Simulated users whose hidden taste is defined on MuQ features (the model only sees CLAP): check that the model recovers them
-- [ ] First learning curve: pairwise accuracy vs. amount of feedback
+- [x] Rating page (`web/`, Next.js + TypeScript): pick a mood → 4 songs → favorite (+ optional least favorite). Songs play at **equal loudness** (−26 dBFS; 99.4% of the pool within 1 dB). You must hear ≥5 s of each song before answering.
+- [x] **Blind by design:** the page never learns which songs were "model" vs "random" picks; that's only logged in the database. Display order is shuffled.
+- [x] API (`src/music_gen/api/`, FastAPI): sessions, slates, answers, normalized audio, "what it learned" profile, stats. Interactive docs at http://localhost:8000/docs
+- [x] Tables: `rating_sessions`, `slates`, `slate_items` (+ migration)
+- [x] Feedback → pairs (`personalization/pairs.py`): favorite beats the other 3; least favorite loses to the other 2 → up to 5 pairs per slate
+- [x] **Bayesian Bradley-Terry** (`personalization/bradley_terry.py`): Laplace approximation, damped Newton; global and **per-mood** variants
+- [x] Baselines: random, average-of-liked-songs
+- [x] Slate policy: 2 Thompson-sampling picks + 2 random picks, one song per prompt, unseen songs first
+- [x] Simulated listeners on the real pool → [results/phase3_simulation.md](results/phase3_simulation.md)
+- [x] Real-data learning curve: `scripts/evaluate_ratings.py`
+- [x] 45 new tests (165 fast total): math, models, policy, simulation, API end to end
+
+**Key findings (simulated):** the Bayesian model beats "average of liked songs" from about 10 ratings on. Per-mood modeling shows a small, not-yet-significant benefit when taste really is mood-dependent, so the app serves the global model until your real data says otherwise.
+
+### ▶️ What to do now: rate songs
+```bash
+bash scripts/start_app.sh          # then open http://localhost:3000
+```
+- Pick the mood you're actually in. Rate honestly; skipping the least favorite is fine.
+- **Targets:** ~20 slates to see early signal, **~100+ for a solid learning curve**. Spread them over several sessions and moods (about 10 minutes = 10 slates).
+- After ~20 slates, check progress: `uv run python scripts/evaluate_ratings.py`
 
 ## Phases 4–8
+
+**Phase 4 preview:** generate *new* songs for a request ("chill lo-fi for studying"): steer the prompt toward what the model has learned you like, generate 8 candidates, rank them with your model, and show the best. Your Phase 3 ratings carry over directly.
+
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design. Each phase gets a detailed checklist here when it starts.
 

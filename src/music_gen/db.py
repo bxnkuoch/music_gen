@@ -130,6 +130,61 @@ class SongFeatures(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RatingSession(Base):
+    """One sitting of rating, in one mood ("context")."""
+
+    __tablename__ = "rating_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    context: Mapped[str] = mapped_column(String(32))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    slates: Mapped[list["Slate"]] = relationship(back_populates="session")
+
+
+class Slate(Base):
+    """A set of songs shown together, and the listener's answer."""
+
+    __tablename__ = "slates"
+    __table_args__ = (
+        CheckConstraint("worst_song_id IS NULL OR worst_song_id <> chosen_song_id"),
+        CheckConstraint("(chosen_song_id IS NULL) = (answered_at IS NULL)", name="answer_complete"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("rating_sessions.id"), index=True)
+    policy: Mapped[str] = mapped_column(String(32))  # how songs were chosen
+    model_name: Mapped[str] = mapped_column(String(32))  # which model scored them
+    n_training_choices: Mapped[int] = mapped_column(Integer)  # answers the model had seen
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    chosen_song_id: Mapped[int | None] = mapped_column(ForeignKey("songs.id"))
+    worst_song_id: Mapped[int | None] = mapped_column(ForeignKey("songs.id"))
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    session: Mapped[RatingSession] = relationship(back_populates="slates")
+    items: Mapped[list["SlateItem"]] = relationship(
+        back_populates="slate", order_by="SlateItem.position"
+    )
+
+
+class SlateItem(Base):
+    """One song in a slate. `source` and `score` are logged but never shown."""
+
+    __tablename__ = "slate_items"
+    __table_args__ = (
+        UniqueConstraint("slate_id", "position"),
+        CheckConstraint("source IN ('model', 'random')", name="valid_source"),
+    )
+
+    slate_id: Mapped[int] = mapped_column(ForeignKey("slates.id"), primary_key=True)
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer)  # display order (shuffled)
+    source: Mapped[str] = mapped_column(String(16))
+    score: Mapped[float] = mapped_column(Float)
+
+    slate: Mapped[Slate] = relationship(back_populates="items")
+
+
 def make_session_factory(database_url: str) -> sessionmaker:
     engine = create_engine(database_url, pool_pre_ping=True)
     return sessionmaker(engine, expire_on_commit=False)
