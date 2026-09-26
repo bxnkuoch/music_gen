@@ -180,3 +180,21 @@ def test_profile_and_stats_reflect_answers(setup):
     assert profile["n_ratings"] == 3
     names = {f["feature"] for f in profile["likes"] + profile["dislikes"]}
     assert names <= {"melodic", "tempo_bpm"}  # principal components are never shown
+
+
+def test_audio_supports_range_requests_so_the_player_can_seek(setup):
+    # Browsers only allow jumping around in a song if the server can send part of it.
+    client, _, song_ids = setup
+    full = client.get(f"/api/songs/{song_ids[0]}/audio")
+    assert full.headers["accept-ranges"] == "bytes"
+    part = client.get(f"/api/songs/{song_ids[0]}/audio", headers={"Range": "bytes=100-199"})
+    assert part.status_code == 206
+    assert part.content == full.content[100:200]
+
+
+def test_normalized_audio_is_cached_and_reused(setup, tmp_path):
+    client, _, song_ids = setup
+    first = client.get(f"/api/songs/{song_ids[0]}/audio").content
+    cached = list((tmp_path / "audio" / "playback").rglob("*.wav"))
+    assert len(cached) == 1
+    assert client.get(f"/api/songs/{song_ids[0]}/audio").content == first
