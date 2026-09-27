@@ -16,7 +16,9 @@ from music_gen.personalization.pairs import Choice, to_pairs
 from music_gen.personalization.policy import POLICIES, SlatePolicy, select_slate
 
 SERVING_MODEL = "bt_global"  # Phase 3 simulation: per-mood didn't beat global at <150 ratings
-SERVING_POLICY = POLICIES["exploit3+thompson1:div"]  # Phase 5 simulation winner
+# Phase 5: not the simulation winner (exploit3+thompson1:div); the random slot keeps
+# part of every slate unbiased for evaluating the model on real ratings.
+SERVING_POLICY = POLICIES["thompson3+random1"]
 
 
 class SlateNotFound(LookupError):

@@ -104,7 +104,7 @@ Browser (Next.js, web/) ──/api/* proxy──► FastAPI (api/app.py → api/
 - **Blind rating:** `source` (model/random) and `score` live only in `slate_items`; the API never sends them to the browser.
 - **Logged randomness:** half of each slate is uniformly random. That keeps exploring and provides unbiased data for evaluation.
 - **Serving model:** global Bayesian BT (prior variance 0.01, chosen by simulation). The per-mood model is evaluated alongside it on real data.
-- **Serving policy (Phase 5):** 3 exploit (posterior mean) + 1 Thompson pick, with a diversity penalty, chosen by simulation over 8 policies ([results](results/phase5_exploration.md)). This replaced the 2 Thompson + 2 random split above; the random half is gone, so new real test pairs are no longer unbiased (see the results file).
+- **Serving policy (Phase 5):** 3 Thompson picks + 1 random pick. Simulation over 8 policies ([results](results/phase5_exploration.md)) found 3 exploit + 1 Thompson with a diversity penalty best for the listener, but it has no random slot; keeping one random pick per slate keeps the real evaluation credible, which the project's main claim depends on.
 
 ### 9. Live requests (Phase 4)
 ```

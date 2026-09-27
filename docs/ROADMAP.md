@@ -126,14 +126,15 @@ bash scripts/start_app.sh          # now also starts the worker; open http://loc
 
 - [x] Slate policies as slot mixes (`personalization/policy.py`): **exploit** (posterior mean), **Thompson** (a fresh posterior sample per slot), **random**, plus an optional **diversity penalty** (maximal marginal relevance on the feature vectors). 8 named presets, including the Phase 3 policy
 - [x] Simulation (`scripts/phase5_simulation.py`): every policy drives 150 slates for the same simulated listeners; measures the listener's experience (best song per slate, true taste), learning on a shared held-out set of random slates, and top-pick quality, with paired CIs → [results/phase5_exploration.md](results/phase5_exploration.md)
-- [x] **The app now serves `exploit3+thompson1:div`**: 3 best-by-mean picks + 1 Thompson pick, with the diversity penalty. It's the only policy that significantly beats the Phase 3 one on top-pick quality for both simulated populations (+4.1 and +6.9 points)
+- [x] Simulation winner: `exploit3+thompson1:div` (3 best-by-mean picks + 1 Thompson pick, with the diversity penalty), the only policy that significantly beats the Phase 3 one on top-pick quality for both simulated populations (+4.1 and +6.9 points)
+- [x] **The app serves `thompson3+random1`** (3 Thompson picks + 1 random pick) instead, so part of every slate stays random and the real learning curve remains credible
 - [x] Migration: slate items can have source `exploit`
 - [x] Bug fix: once every song had been shown (~137 slates), the next slate crashed instead of starting over
 - [x] 202 fast tests
 
 **Key findings (simulated):** using the model beats random slates; pure greedy learns measurably worse (the exploration–exploitation trade-off); the diversity penalty improves early experience in every pairing. The differences between good policies are small (1–2 points).
 
-**Trade-off:** the served policy has no random slot, so from now on your real test pairs come from the model's own picks. See the results file; `thompson3+random1` is the fallback if unbiased real evaluation becomes the priority.
+**Trade-off:** honest real evaluation was put ahead of a slightly better listening experience. The winner is one line away (`SERVING_POLICY` in `api/service.py`) if that priority changes.
 
 ## Phases 6–8
 
