@@ -14,7 +14,7 @@ import numpy as np
 
 from music_gen.personalization.models import PreferenceModel
 from music_gen.personalization.pairs import Choice
-from music_gen.personalization.policy import select_slate
+from music_gen.personalization.policy import POLICIES, SlatePolicy, select_slate
 
 
 @dataclass(frozen=True)
@@ -80,30 +80,39 @@ def simulate_choices(
     rng: np.random.Generator,
     *,
     model: PreferenceModel | None = None,
+    policy: SlatePolicy = POLICIES["random"],
+    features: np.ndarray | None = None,
+    exclude_seen: bool = False,
     slates_per_session: int = 10,
-    slate_size: int = 4,
 ) -> list[Choice]:
     """Let the user rate `n_slates` slates in random moods.
 
     model=None: fully random slates (clean data for comparing models).
-    model given: slates from the live policy, refitting after every slate.
+    model given: slates from `policy`, refitting after every slate.
+    exclude_seen: like the app, show unseen songs first.
     """
     from music_gen.personalization.models import RandomModel
     from music_gen.personalization.pairs import to_pairs
 
+    if model is None and policy.random != policy.size:
+        raise ValueError("a policy that uses the model needs a model")
     policy_model = model or RandomModel(len(meta.groups))
     choices: list[Choice] = []
+    seen: set[int] = set()
     for t in range(n_slates):
         context = contexts[rng.integers(len(contexts))]
         items = select_slate(
             policy_model,
             context,
             rng,
+            policy=policy,
             groups=meta.groups,
-            size=slate_size,
-            n_model=slate_size // 2 if model else 0,
+            features=features,
+            exclude=seen,
         )
         shown = [item.song for item in items]
+        if exclude_seen:
+            seen.update(shown)
         best, worst = user.choose(meta, shown, context, rng)
         choices.append(Choice(tuple(shown), best, context, worst, session=t // slates_per_session))
         if model is not None:

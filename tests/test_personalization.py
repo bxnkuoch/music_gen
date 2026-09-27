@@ -7,7 +7,7 @@ from music_gen.personalization import bradley_terry
 from music_gen.personalization.evaluation import bootstrap_ci, learning_curve, pair_correctness
 from music_gen.personalization.models import BradleyTerryModel, MeanLikedModel, RandomModel
 from music_gen.personalization.pairs import Choice, Pair, choice_to_pairs, to_pairs
-from music_gen.personalization.policy import select_slate
+from music_gen.personalization.policy import POLICIES, SlatePolicy, select_slate
 from music_gen.personalization.simulation import (
     SongMeta,
     make_user,
@@ -174,10 +174,14 @@ def test_baselines(songs):
 
 # --- policy ------------------------------------------------------------------------------
 
+PHASE3 = POLICIES["thompson+random"]
+
 
 def test_slate_has_distinct_prompts_and_both_sources(songs):
     groups = np.repeat(np.arange(20), 2)  # pairs of songs share a prompt
-    items = select_slate(RandomModel(40), "a", np.random.default_rng(0), groups=groups)
+    items = select_slate(
+        RandomModel(40), "a", np.random.default_rng(0), policy=PHASE3, groups=groups
+    )
     assert len(items) == 4
     assert len({groups[i.song] for i in items}) == 4
     assert [i.source for i in items] == ["model", "model", "random", "random"]
@@ -186,25 +190,101 @@ def test_slate_has_distinct_prompts_and_both_sources(songs):
 def test_model_slots_take_the_highest_scored_songs(songs):
     model = BradleyTerryModel(songs, ["a"], per_context=False)
     model.posterior = bradley_terry.Posterior(np.array([1.0, 0, 0, 0, 0]), np.eye(5) * 1e-12)
-    items = select_slate(model, "a", np.random.default_rng(0), groups=np.arange(40))
-    top2 = set(np.argsort(-songs[:, 0])[:2])
-    assert {i.song for i in items if i.source == "model"} == top2
+    top = np.argsort(-songs[:, 0])
+    for policy, n_top in [(PHASE3, 2), (POLICIES["greedy"], 4), (POLICIES["thompson"], 4)]:
+        items = select_slate(
+            model, "a", np.random.default_rng(0), policy=policy, groups=np.arange(40)
+        )
+        assert {i.song for i in items if i.source != "random"} == set(top[:n_top])
+
+
+class SequenceModel:
+    """Every Thompson draw returns the next score vector in a fixed list."""
+
+    def __init__(self, mean, draws):
+        self.mean, self.draws = mean, iter(draws)
+
+    def scores(self, context):
+        return self.mean
+
+    def sampled_scores(self, context, rng):
+        return next(self.draws, self.mean)
+
+
+def test_each_thompson_slot_uses_a_fresh_sample_after_the_exploit_slots():
+    mean = np.array([9.0, 8, 7, 0, 0, 0, 0, 0])
+    draws = [np.eye(8)[k] for k in (0, 3, 5)]  # 1st draw favours song 0 (already taken)
+    policy = SlatePolicy("t", exploit=2, thompson=2)
+    items = select_slate(
+        SequenceModel(mean, draws),
+        "a",
+        np.random.default_rng(0),
+        policy=policy,
+        groups=np.arange(8),
+    )
+    assert [(i.song, i.source) for i in items] == [
+        (0, "exploit"),
+        (1, "exploit"),
+        (2, "model"),
+        (3, "model"),
+    ]  # 1st draw: 0 and 1 taken, all others tie -> first free song (2); 2nd draw -> song 3
+
+
+def test_diversity_penalty_avoids_near_duplicates():
+    # Songs 0-2 point the same way and score highest; song 3 is different, slightly lower.
+    features = np.array([[1.0, 0], [1.0, 0.01], [1.0, 0.02], [0, 1.0], [-1, 0], [0, -1]])
+    mean = np.array([1.0, 0.99, 0.98, 0.9, -1, -1])
+    model = SequenceModel(mean, [])
+    rng = np.random.default_rng(0)
+    groups = np.arange(6)
+    plain = SlatePolicy("g", exploit=2)
+    diverse = SlatePolicy("g:div", exploit=2, diversity=1.0)
+    assert [i.song for i in select_slate(model, "a", rng, policy=plain, groups=groups)] == [0, 1]
+    items = select_slate(model, "a", rng, policy=diverse, groups=groups, features=features)
+    assert [i.song for i in items] == [0, 3]
+    with pytest.raises(ValueError, match="features"):
+        select_slate(model, "a", rng, policy=diverse, groups=groups)
+
+
+def test_every_preset_fills_a_valid_slate(songs):
+    model = BradleyTerryModel(songs, ["a"], per_context=False)
+    groups = np.repeat(np.arange(20), 2)
+    for policy in POLICIES.values():
+        assert len(policy.name) <= 32  # database column width
+        items = select_slate(
+            model, "a", np.random.default_rng(0), policy=policy, groups=groups, features=songs
+        )
+        assert len(items) == policy.size == 4
+        assert len({groups[i.song] for i in items}) == 4
 
 
 def test_excluded_songs_are_avoided_until_exhausted(songs):
     groups = np.arange(40)
     rng = np.random.default_rng(0)
-    items = select_slate(RandomModel(40), "a", rng, groups=groups, exclude=set(range(36)))
+    items = select_slate(
+        RandomModel(40), "a", rng, policy=PHASE3, groups=groups, exclude=set(range(36))
+    )
     assert {i.song for i in items} == {36, 37, 38, 39}
     # Only 2 songs left unseen: start over rather than fail.
-    items = select_slate(RandomModel(40), "a", rng, groups=groups, exclude=set(range(38)))
+    items = select_slate(
+        RandomModel(40), "a", rng, policy=PHASE3, groups=groups, exclude=set(range(38))
+    )
+    assert len(items) == 4
+    # Every song already shown (happens after ~137 slates in the app): start over too.
+    items = select_slate(
+        RandomModel(40), "a", rng, policy=PHASE3, groups=groups, exclude=set(range(40))
+    )
     assert len(items) == 4
 
 
 def test_slate_needs_enough_distinct_prompts():
     with pytest.raises(ValueError, match="distinct groups"):
         select_slate(
-            RandomModel(6), "a", np.random.default_rng(0), groups=np.array([0, 0, 1, 1, 2, 2])
+            RandomModel(6),
+            "a",
+            np.random.default_rng(0),
+            policy=PHASE3,
+            groups=np.array([0, 0, 1, 1, 2, 2]),
         )
 
 
@@ -270,6 +350,28 @@ def test_simulated_choices_are_valid_and_follow_taste(meta):
     for c in choices:  # almost no noise: favourite really is the best shown
         assert c.chosen == max(c.shown, key=lambda s: u[s])
         assert c.worst == min(c.shown, key=lambda s: u[s])
+
+
+def test_simulated_policy_slates_show_unseen_songs_first(meta):
+    rng = np.random.default_rng(0)
+    user = make_user(rng, meta, ["chill"], mood_dependent=False)
+    x = np.hstack([meta.hidden, rng.normal(size=(len(meta.groups), 2))])
+    model = BradleyTerryModel(x, ["chill"], per_context=False)
+    choices = simulate_choices(
+        user,
+        meta,
+        ["chill"],
+        15,
+        rng,
+        model=model,
+        policy=POLICIES["exploit3+thompson1:div"],
+        features=x,
+        exclude_seen=True,
+    )
+    shown = [s for c in choices for s in c.shown]
+    assert len(shown) == len(set(shown)) == 60  # 15 slates x 4, no repeats
+    with pytest.raises(ValueError, match="needs a model"):
+        simulate_choices(user, meta, ["chill"], 1, rng, policy=POLICIES["greedy"])
 
 
 def test_model_learns_simulated_taste_end_to_end(meta):

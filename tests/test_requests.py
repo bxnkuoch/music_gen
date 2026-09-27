@@ -135,12 +135,13 @@ def test_request_creates_four_steered_and_four_plain_jobs(world):
 
 
 def rate_library(session_factory, recommender, n=3):
-    """Answer n library slates (always the first song), so the model has a taste."""
+    """Answer n library slates, so the model has a taste. Always picks the lowest song id:
+    a consistent taste (picking by position could contradict itself and cancel out)."""
     with session_factory() as s:
         sid = recommender.start_session(s, "chill").id
         for _ in range(n):
             slate = recommender.next_slate(s, sid)
-            recommender.record_answer(s, slate.id, slate.items[0].song_id, None)
+            recommender.record_answer(s, slate.id, min(i.song_id for i in slate.items), None)
 
 
 def test_worker_generates_featurizes_and_ranks_into_a_slate(world):
@@ -177,7 +178,7 @@ def test_answering_a_request_slate_feeds_the_model(world):
     work()
     with session_factory() as s:
         slate = requests.status(s, request_id).slate
-        recommender.record_answer(s, slate.id, slate.items[0].song_id, None)
+        recommender.record_answer(s, slate.id, min(i.song_id for i in slate.items), None)
         choices = recommender.load_choices(s)
     assert len(choices) == 1 and choices[0].context == "chill"
 

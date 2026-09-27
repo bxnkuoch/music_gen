@@ -94,7 +94,7 @@ def test_slate_has_four_distinct_prompt_songs_and_hides_its_strategy(setup):
         prompts = {songs[i.song_id].job.prompt_id for i in items}
     assert len(prompts) == 4
     assert sorted(i.position for i in items) == [0, 1, 2, 3]
-    assert sorted(i.source for i in items) == ["model", "model", "random", "random"]
+    assert sorted(i.source for i in items) == ["exploit", "exploit", "exploit", "model"]
 
 
 def test_refreshing_returns_the_same_unanswered_slate(setup):

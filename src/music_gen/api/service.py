@@ -13,9 +13,10 @@ from music_gen.db import RatingSession, Slate, SlateItem
 from music_gen.personalization.data import DbSongSource, SongMatrix
 from music_gen.personalization.models import BradleyTerryModel
 from music_gen.personalization.pairs import Choice, to_pairs
-from music_gen.personalization.policy import POLICY_NAME, select_slate
+from music_gen.personalization.policy import POLICIES, SlatePolicy, select_slate
 
 SERVING_MODEL = "bt_global"  # Phase 3 simulation: per-mood didn't beat global at <150 ratings
+SERVING_POLICY = POLICIES["exploit3+thompson1:div"]  # Phase 5 simulation winner
 
 
 class SlateNotFound(LookupError):
@@ -37,8 +38,7 @@ class Recommender:
         contexts: dict[str, str],
         *,
         rng: np.random.Generator | None = None,
-        slate_size: int = 4,
-        n_model: int = 2,
+        policy: SlatePolicy = SERVING_POLICY,
         source: DbSongSource | None = None,
     ) -> None:
         """source: if given, the song matrix is reloaded whenever new songs appear."""
@@ -47,8 +47,7 @@ class Recommender:
         self.songs = songs
         self.contexts = contexts
         self.rng = rng or np.random.default_rng()
-        self.slate_size = slate_size
-        self.n_model = n_model
+        self.policy = policy
 
     # --- reading history ----------------------------------------------------------------
 
@@ -112,14 +111,14 @@ class Recommender:
             model,
             rating_session.context,
             self.rng,
+            policy=self.policy,
             groups=self.songs.groups,
+            features=self.songs.x,
             exclude=exclude,
-            size=self.slate_size,
-            n_model=self.n_model,
         )
         slate = Slate(
             session_id=session_id,
-            policy=POLICY_NAME,
+            policy=self.policy.name,
             model_name=SERVING_MODEL,
             n_training_choices=n_choices,
         )

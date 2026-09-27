@@ -2,7 +2,7 @@
 
 A music system that **learns one listener's taste** from "A or B?" feedback and uses that learned taste to **steer generation** and **rank candidate songs**. Open-source models generate and embed the audio. The preference learning, exploration strategy and evaluation are built from scratch.
 
-> **Status:** Phases 0–4 of 8 are complete. You can rate the 540-song library, or ask for *new* songs that are generated, steered toward your learned taste, and ranked by your model, with a built-in blind A/B test of whether the personalization helps. **Now collecting real ratings.** See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
+> **Status:** Phases 0–5 of 8 are complete. You can rate the 540-song library (slates balance exploiting your learned taste with exploring, chosen by simulation), or ask for *new* songs that are generated, steered toward your learned taste, and ranked by your model, with a built-in blind A/B test of whether the personalization helps. **Now collecting real ratings.** See **[docs/ROADMAP.md](docs/ROADMAP.md)** for progress and next steps.
 
 ## Why this is more than "call a music API"
 

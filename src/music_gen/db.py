@@ -201,7 +201,7 @@ class SlateItem(Base):
     __tablename__ = "slate_items"
     __table_args__ = (
         UniqueConstraint("slate_id", "position"),
-        CheckConstraint("source IN ('model', 'random')", name="valid_source"),
+        CheckConstraint("source IN ('exploit', 'model', 'random')", name="valid_source"),
     )
 
     slate_id: Mapped[int] = mapped_column(ForeignKey("slates.id"), primary_key=True)
