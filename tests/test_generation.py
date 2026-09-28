@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from music_gen import audio
 from music_gen.generation import (
     AceStepGenerator,
     GenerationError,
@@ -109,6 +110,23 @@ def test_lyrics_and_musical_params_are_forwarded():
     assert call["bpm"] == 92
     assert call["keyscale"] == "A minor"
     assert call["prompt"] == "pop"
+
+
+def test_no_reference_by_default():
+    gen, pipe = make_generator()
+    gen.generate(GenerationRequest("pop", duration_s=10))
+    assert pipe.calls[0]["reference_audio"] is None
+
+
+def test_reference_audio_is_sent_as_stereo_at_the_pipeline_rate(tmp_path):
+    mono_24k = (0.1 * np.random.default_rng(0).standard_normal(24_000 * 3)).astype(np.float32)
+    path = audio.save_wav(mono_24k, 24_000, tmp_path / "ref.wav")
+    gen, pipe = make_generator()
+    gen.generate(GenerationRequest("pop", duration_s=10, reference_audio=path))
+    reference = pipe.calls[0]["reference_audio"]
+    assert isinstance(reference, torch.Tensor)
+    assert reference.shape == (2, 3 * 48_000)
+    assert torch.equal(reference[0], reference[1])
 
 
 def test_same_seed_is_reproducible_and_different_seeds_differ():

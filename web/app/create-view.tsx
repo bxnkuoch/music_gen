@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-import { api, type Contexts, type RequestCreated, type RequestStatus, requestsApi } from "./api";
+import {
+  api,
+  type Contexts,
+  type Reference,
+  type RequestCreated,
+  type RequestStatus,
+  requestsApi,
+} from "./api";
 import styles from "./page.module.css";
 import SlateView from "./slate-view";
 
@@ -10,10 +17,14 @@ const POLL_MS = 2000;
 // If nothing has finished after this long, the worker probably isn't running.
 const STALL_WARNING_MS = 60_000;
 
-type Props = { contexts: Contexts; onRated: (nRatings: number) => void };
+type Props = {
+  contexts: Contexts;
+  onRated: (nRatings: number) => void;
+  reference?: Reference; // generate songs that imitate this uploaded song
+};
 
 /** "Make me something": request -> progress -> ranked slate -> answer. */
-export default function CreateView({ contexts, onRated }: Props) {
+export default function CreateView({ contexts, onRated, reference }: Props) {
   const [text, setText] = useState("");
   const [context, setContext] = useState("");
   const [created, setCreated] = useState<RequestCreated | null>(null);
@@ -44,7 +55,7 @@ export default function CreateView({ contexts, onRated }: Props) {
     setError(null);
     setBusy(true);
     try {
-      const result = await requestsApi.create(text, mood);
+      const result = await requestsApi.create(text, mood, reference?.reference_id ?? null);
       setCreated(result);
       setStatus(null);
       setAnswered(false);
@@ -80,7 +91,11 @@ export default function CreateView({ contexts, onRated }: Props) {
   if (!created) {
     return (
       <section className={styles.createForm}>
-        <h2>Describe what you want to hear</h2>
+        <h2>
+          {reference
+            ? `Describe what you want to hear, in the style of “${reference.filename}”`
+            : "Describe what you want to hear"}
+        </h2>
         <input
           className={styles.textInput}
           placeholder="e.g. chill lofi with plucked guitar for studying"
@@ -104,8 +119,11 @@ export default function CreateView({ contexts, onRated }: Props) {
           Generate 8 songs, show me the best 4
         </button>
         <p className={styles.muted}>
-          Takes about 2 minutes. Some candidates are nudged towards what the system has learned
-          you like; you won&apos;t be told which.
+          Takes about 2 minutes.{" "}
+          {reference
+            ? "Some candidates are generated with your reference song's sound"
+            : "Some candidates are nudged towards what the system has learned you like"}
+          ; you won&apos;t be told which.
         </p>
       </section>
     );

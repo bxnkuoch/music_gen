@@ -120,7 +120,20 @@ Browser ◄─GET /api/requests/{id} (poll)── status + slate → answer → 
 - **Genre stays the listener's call:** steering only adds instrument / character / mood tags.
 - **Same BPM for all 8 candidates of a request**, so tempo can't confound the A/B.
 
-### 10. Licenses
+### 10. Reference songs (Phase 6)
+```
+Browser ──POST /api/references (raw file)──► API: check it decodes, store in data/ → "pending"
+                               Worker: CLAP-embed it (before any generation job) → "ready"
+Browser ◄─GET /api/references/{id} (poll)── closest library songs (pgvector)
+Browser ──POST /api/requests + reference_id──► 4 reference + 4 plain jobs → slate (2 + 2)
+```
+- **Why the worker embeds uploads:** it already holds CLAP; loading it into the API too would make the API slow to start and heavy, for about a second of work per upload.
+- **Search uses the serving embedding (CLAP)**, so "similar" means similar in the same space the preference model learns in.
+- **Reference ≠ rating:** uploading a song doesn't update the taste model. It isn't a blind choice between shown songs, and mixing it in would bias the real evaluation.
+- **Same A/B design as Phase 4**, with reference candidates in place of steered ones, so each question ("does steering help?", "does a reference help?") is measured on its own.
+- **Copyright:** reference files are the listener's own, stay on their machine in `data/` (gitignored), and are only used locally for conditioning and search.
+
+### 11. Licenses
 | Component | License | Note |
 |---|---|---|
 | ACE-Step 1.5 | MIT | Generated audio is unrestricted |

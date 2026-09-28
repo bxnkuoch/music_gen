@@ -140,7 +140,7 @@ def process_next_job(
     Shared by the pool runner and the live-request worker. Never raises for a bad
     job: failures are recorded on the job and returned.
     """
-    claimed = _claim_next_job(session_factory)
+    claimed = _claim_next_job(session_factory, data_dir)
     if claimed is None:
         return None
     job_id, request_kwargs = claimed
@@ -172,7 +172,7 @@ def requeue(session: Session, max_attempts: int) -> None:
         logger.info("Re-queued %d interrupted and %d failed jobs", stale, retry)
 
 
-def _claim_next_job(session_factory: sessionmaker) -> tuple[int, dict] | None:
+def _claim_next_job(session_factory: sessionmaker, data_dir: Path) -> tuple[int, dict] | None:
     with session_factory() as session:
         job = session.scalars(
             select(GenerationJob)
@@ -192,6 +192,7 @@ def _claim_next_job(session_factory: sessionmaker) -> tuple[int, dict] | None:
             "seed": job.seed,
             "bpm": job.bpm,
             "keyscale": job.keyscale,
+            "reference_audio": data_dir / job.reference.audio_path if job.reference else None,
         }
         session.commit()
         return job.id, request_kwargs

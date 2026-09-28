@@ -48,10 +48,32 @@ export type RequestStatus = {
 };
 
 export const requestsApi = {
-  create: (text: string, context: string) =>
+  create: (text: string, context: string, referenceId: number | null = null) =>
     call<RequestCreated>("/api/requests", {
       method: "POST",
-      body: JSON.stringify({ text, context }),
+      body: JSON.stringify({ text, context, reference_id: referenceId }),
     }),
   status: (requestId: number) => call<RequestStatus>(`/api/requests/${requestId}`),
+};
+
+export type SimilarSong = { song_id: number; audio_url: string; prompt: string; distance: number };
+export type Reference = {
+  reference_id: number;
+  filename: string;
+  duration_s: number;
+  status: "pending" | "ready" | "failed";
+  error: string | null;
+  audio_url: string;
+  similar: SimilarSong[]; // closest library songs, once ready
+};
+
+export const referencesApi = {
+  // The body is the raw file, not a multipart form.
+  upload: (file: File) =>
+    call<Reference>(`/api/references?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    }),
+  get: (referenceId: number) => call<Reference>(`/api/references/${referenceId}`),
 };

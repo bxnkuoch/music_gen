@@ -122,10 +122,21 @@ def nearest_songs(
     )
     if target is None:
         raise LookupError(f"song {song_id} has no {model_name} embedding")
+    return nearest_to_vector(session, target, model_name, k, exclude_song_id=song_id)
+
+
+def nearest_to_vector(
+    session: Session,
+    target: np.ndarray,
+    model_name: str,
+    k: int = 5,
+    exclude_song_id: int | None = None,
+) -> list[tuple[int, float]]:
+    """The k songs closest to any embedding (e.g. an uploaded reference song)."""
     distance = SongEmbedding.embedding.cosine_distance(target)
     rows = session.execute(
         select(SongEmbedding.song_id, distance)
-        .where(SongEmbedding.model_name == model_name, SongEmbedding.song_id != song_id)
+        .where(SongEmbedding.model_name == model_name, SongEmbedding.song_id != exclude_song_id)
         .order_by(distance)
         .limit(k)
     ).all()

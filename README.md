@@ -56,10 +56,11 @@ uv run python scripts/phase2_validation.py
 # Find songs similar to song 42
 uv run python scripts/similar_songs.py 42
 
-# 8. Rate songs / create new ones (database + API + worker + web page; open http://localhost:3000)
+# 8. Rate songs / create new ones / start from a song you like
+#    (database + API + worker + web page; open http://localhost:3000)
 bash scripts/start_app.sh
 
-# 9. After ~20 ratings: does the model predict your choices? Does steering help?
+# 9. After ~20 ratings: does the model predict your choices? Do steering and references help?
 uv run python scripts/evaluate_ratings.py
 
 # Optional: reproduce the Phase 0 benchmark (~5 min)
@@ -79,6 +80,7 @@ src/music_gen/
   features/            signal features, tag scores, feature space, pgvector search
   personalization/     Bayesian Bradley-Terry, baselines, slate policy, simulation, evaluation
   api/                 FastAPI: rating loop (service.py), live requests (requests.py), HTTP (app.py)
+  references.py        uploaded reference songs: store, embed, find similar
   worker.py            background worker: generate -> featurize -> rank live requests
 web/                   Next.js + TypeScript rating page
   generation/          ACE-Step wrapper: seeded, validated generation
@@ -100,11 +102,11 @@ data/                  (git-ignored) model weights, audio, raw results
 
 ## Testing
 
-- `uv run pytest`: **198 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, missing weights). Feature tests use signals with known answers (click tracks at a known BPM, sines of known loudness). Preference-learning tests check that the model recovers known tastes (including opposite tastes in different moods). API tests drive the whole rating loop over HTTP, and live-request tests run request → worker → ranked slate with a fake generator. Database tests cover migrations, constraints, crash and resume, and pgvector search, using a separate test database. They're skipped, with a message, if Postgres isn't running.
+- `uv run pytest`: **214 fast tests**. They use fake models to check validation and edge cases (empty prompts, out-of-range durations and BPM, NaN or silent audio, seed reproducibility, deterministic windowing, missing weights). Feature tests use signals with known answers (click tracks at a known BPM, sines of known loudness). Preference-learning tests check that the model recovers known tastes (including opposite tastes in different moods). API tests drive the whole rating loop over HTTP, and live-request tests run request → worker → ranked slate with a fake generator. Database tests cover migrations, constraints, crash and resume, and pgvector search, using a separate test database. They're skipped, with a message, if Postgres isn't running.
 - `uv run pytest -m slow`: **4 integration tests** with the real models. They include a regression test for a broken CLAP checkpoint, and a check that our MuQ compatibility patch reproduces the original model's outputs.
 - `uv run ruff check . && uv run ruff format --check .`: Python lint and formatting.
 - `cd web && npm run lint && npx tsc --noEmit`: frontend lint and type-check.
 
 ## Licenses
 
-Code: [MIT](LICENSE). Model licenses are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#10-licenses). MuQ-MuLan weights are **non-commercial** and are used only for research and evaluation.
+Code: [MIT](LICENSE). Model licenses are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#11-licenses). MuQ-MuLan weights are **non-commercial** and are used only for research and evaluation.

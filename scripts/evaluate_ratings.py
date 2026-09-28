@@ -4,6 +4,8 @@
    answered slates and test on every later one. 95% CIs resample whole sessions.
 2. Steering A/B (Phase 4): on "Create new" slates (2 steered + 2 plain songs, blind),
    how often did you pick a steered one? 50% = steering makes no difference.
+3. Reference A/B (Phase 6): the same, on "More like this" slates (2 songs generated
+   with your reference song + 2 plain).
 
 Usage:  uv run python scripts/evaluate_ratings.py
 Writes: data/results/real_learning_curve.json
@@ -19,7 +21,14 @@ from sqlalchemy import select
 
 from music_gen.api.service import Recommender
 from music_gen.config import get_settings
-from music_gen.db import GenerationJob, ListenerRequest, Slate, Song, make_session_factory
+from music_gen.db import (
+    GenerationJob,
+    ListenerRequest,
+    Slate,
+    SlateItem,
+    Song,
+    make_session_factory,
+)
 from music_gen.features.space import FeatureSpace
 from music_gen.features.tags import load_tags
 from music_gen.logging_setup import configure_logging
@@ -31,21 +40,30 @@ logger = logging.getLogger("evaluate_ratings")
 CHECKPOINTS = [0, 5, 10, 20, 40, 80, 120, 160, 240, 320]
 
 
-def steering_ab(session) -> dict:
-    """Among answered request slates: how often was the favourite a steered song?"""
+def variant_ab(session, treated: str) -> dict:
+    """Among answered request slates that compare `treated` ("steered" or "reference")
+    songs with plain ones: how often was the favourite a `treated` song?"""
     rows = session.execute(
-        select(GenerationJob.variant)
-        .join(Song, Song.job_id == GenerationJob.id)
-        .join(Slate, Slate.chosen_song_id == Song.id)
+        select(Slate.id, GenerationJob.variant, Slate.chosen_song_id == SlateItem.song_id)
+        .join(SlateItem, SlateItem.slate_id == Slate.id)
+        .join(Song, Song.id == SlateItem.song_id)
+        .join(GenerationJob, Song.job_id == GenerationJob.id)
         .join(ListenerRequest, ListenerRequest.session_id == Slate.session_id)
         .where(Slate.answered_at.is_not(None))
     ).all()
-    n = len(rows)
-    wins = sum(1 for (variant,) in rows if variant == "steered")
+    shown: dict[int, set[str]] = {}
+    chosen: dict[int, str] = {}
+    for slate_id, variant, is_chosen in rows:
+        shown.setdefault(slate_id, set()).add(variant)
+        if is_chosen:
+            chosen[slate_id] = variant
+    slates = [slate_id for slate_id, variants in shown.items() if treated in variants]
+    n = len(slates)
+    wins = sum(1 for slate_id in slates if chosen[slate_id] == treated)
     low, high = wilson_interval(wins, n)
     return {
         "n_request_slates": n,
-        "steered_picked": wins,
+        f"{treated}_picked": wins,
         "rate": wins / n if n else None,
         "ci_low": low,
         "ci_high": high,
@@ -60,14 +78,16 @@ def main() -> None:
     with make_session_factory(settings.database_url)() as session:
         songs = load_song_matrix(session, space, load_tags(Path("configs/tags.yaml")))
         choices = Recommender(songs, contexts).load_choices(session)
-        ab = steering_ab(session)
+        ab_tests = {treated: variant_ab(session, treated) for treated in ("steered", "reference")}
     logger.info("%d answered slates", len(choices))
-    if ab["n_request_slates"]:
-        print(
-            f"Steering A/B: you picked a steered song in {ab['steered_picked']}/"
-            f"{ab['n_request_slates']} request slates = {ab['rate']:.0%} "
-            f"[95% CI {ab['ci_low']:.0%}-{ab['ci_high']:.0%}]; 50% = no effect.\n"
-        )
+    for treated, ab in ab_tests.items():
+        if ab["n_request_slates"]:
+            print(
+                f"{treated.capitalize()} A/B: you picked a {treated} song in "
+                f"{ab[f'{treated}_picked']}/{ab['n_request_slates']} request slates = "
+                f"{ab['rate']:.0%} [95% CI {ab['ci_low']:.0%}-{ab['ci_high']:.0%}]; "
+                "50% = no effect.\n"
+            )
     if len(choices) < 15:
         print(f"Only {len(choices)} ratings so far: rate at least 15 slates first.")
         return
@@ -80,7 +100,12 @@ def main() -> None:
         "bt_per_mood": lambda: BradleyTerryModel(x, names, per_context=True),
     }
     rng = np.random.default_rng(0)
-    results = {"n_ratings": len(choices), "steering_ab": ab, "curves": {}}
+    results = {
+        "n_ratings": len(choices),
+        "steering_ab": ab_tests["steered"],
+        "reference_ab": ab_tests["reference"],
+        "curves": {},
+    }
     print(f"\nPairwise accuracy on your later choices ({len(choices)} ratings)\n")
     print(f"{'trained on':>11} | " + " | ".join(f"{m:>20}" for m in models))
     curves = {m: learning_curve(make, choices, CHECKPOINTS, rng) for m, make in models.items()}

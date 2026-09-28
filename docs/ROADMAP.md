@@ -12,8 +12,8 @@ Status key: ✅ done · 🔄 in progress · ⬜ not started
 | 3 | Rating UI + Bayesian Bradley-Terry preference model + simulated users | ✅ (now: collect ratings) |
 | 4 | Live generation + personalized candidate ranking | ✅ (now: collect A/B data) |
 | 5 | Exploration vs exploitation (Thompson sampling slates) | ✅ |
-| 6 | Reference songs + similarity search | ⬜ **next** |
-| 7 | Evaluation experiments vs baselines | ⬜ |
+| 6 | Reference songs + similarity search | ✅ (now: try it with songs you like) |
+| 7 | Evaluation experiments vs baselines | ⬜ **next** |
 | 8 | Polished frontend + deployment | ⬜ |
 | — | Vocals (after Phase 4) | ⬜ |
 
@@ -136,7 +136,30 @@ bash scripts/start_app.sh          # now also starts the worker; open http://loc
 
 **Trade-off:** honest real evaluation was put ahead of a slightly better listening experience. The winner is one line away (`SERVING_POLICY` in `api/service.py`) if that priority changes.
 
-## Phases 6–8
+## Phase 6: reference songs + similarity search ✅
+
+- [x] **"More like this" tab**: upload a song you like (MP3/WAV/FLAC/OGG, up to 50 MB) → the closest songs in your library → generate new songs in its style
+- [x] `reference_songs` table; the file stays in `data/audio/references/` (gitignored, never committed)
+- [x] The API only checks and stores the upload (it must decode and be at least 5 s long); the **worker embeds it** with CLAP, like every generated song, before any generation job (someone is waiting)
+- [x] **Similarity search** over the whole library with pgvector (`references.similar_songs`, `store.nearest_to_vector`)
+- [x] **Reference-conditioned generation**: ACE-Step's `reference_audio` input (timbre/production from 3 × 10 s of the song). Jobs record `reference_id`; new job variant `reference`
+- [x] **Reference A/B**: a request with a reference makes 4 reference + 4 plain candidates (no steering tags, same BPM); the slate shows the top 2 of each, blind. `evaluate_ratings.py` reports it separately from the steering A/B
+- [x] The web proxy's upload limit raised from 10 MB to 50 MB (it silently cut larger files)
+- [x] Real-model check: with the same prompt and seed, adding a reference changes the output, and its CLAP similarity to the reference went from 0.73 to 0.79 (one sample: a smoke test, not a result)
+- [x] 12 new tests (214 fast total): upload validation, embedding + failure handling, search matching a brute-force cosine search, reference requests end to end, API
+
+**Decided:** a reference song is *not* treated as a rating. It steers search and generation only, so the preference model and its evaluation keep learning from blind choices alone.
+
+**Trade-off:** reference requests drop the steering tags, so the A/B isolates the reference's effect. Combining both is one change in `RequestService.create` once each has been measured.
+
+### ▶️ What to do now
+```bash
+bash scripts/start_app.sh          # applies the new migration, starts everything
+```
+- Open **More like this**, upload a song you like, listen to its closest matches, then generate from it
+- **Targets:** ~30 answered reference requests for a first read on "does the reference help?"
+
+## Phases 7–8
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design. Each phase gets a detailed checklist here when it starts.
 

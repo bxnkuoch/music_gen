@@ -8,6 +8,10 @@ Per request:
   * When all are generated, the model ranks them and the slate shows the best 2 of
     each kind, shuffled and blind. How often the listener picks a steered song
     (vs 50% by chance) measures whether personalized generation helps.
+
+With a reference song (Phase 6), the 4 steered candidates are replaced by 4
+REFERENCE candidates: request text + the reference as ACE-Step reference audio, no
+steering tags. Same blind 2-vs-2 slate, so it measures whether the reference helps.
 """
 
 from dataclasses import dataclass
@@ -18,7 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from music_gen.api.service import SERVING_MODEL, InvalidAnswer, Recommender, SlateNotFound
-from music_gen.db import GenerationJob, ListenerRequest, Prompt, Slate, SlateItem
+from music_gen.db import GenerationJob, ListenerRequest, Prompt, ReferenceSong, Slate, SlateItem
 from music_gen.features.tags import TagVocabulary
 from music_gen.personalization.steering import (
     RequestWords,
@@ -28,11 +32,10 @@ from music_gen.personalization.steering import (
     steer_modifiers,
 )
 
-N_STEERED = 4
+N_TREATED = 4  # steered, or reference if the request has a reference song
 N_PLAIN = 4
 SHOWN_PER_VARIANT = 2
 DURATION_S = 30.0
-POLICY = "request:top2steered+top2plain"
 MIN_SLATE_SIZE = 2
 
 
@@ -61,22 +64,31 @@ class RequestService:
         self.generator_model = generator_model
         self.rng = rng or np.random.default_rng()
 
-    def create(self, session: Session, text: str, context: str) -> ListenerRequest:
+    def create(
+        self, session: Session, text: str, context: str, reference_id: int | None = None
+    ) -> ListenerRequest:
         try:
             parsed = parse_request(text, self.vocab, self.words)
         except ValueError as e:
             raise InvalidAnswer(str(e)) from e
+        if reference_id is not None and session.get(ReferenceSong, reference_id) is None:
+            raise InvalidAnswer(f"reference song {reference_id} doesn't exist")
         rating_session = self.recommender.start_session(session, context)
-        model, _ = self.recommender.fitted_model(session)
 
-        names = self.recommender.songs.names
-        tag_columns = {n.split(":", 1)[1]: i for i, n in enumerate(names) if n.startswith("tag:")}
-        d = len(names)
         plans: list[tuple[str, list[str]]] = []
-        for _ in range(N_STEERED):
-            w = model.posterior.sample(self.rng)[:d]  # one plausible taste
-            weights = {tag: float(w[i]) for tag, i in tag_columns.items()}
-            plans.append(("steered", steer_modifiers(weights, self.vocab, parsed)))
+        if reference_id is None:
+            model, _ = self.recommender.fitted_model(session)
+            names = self.recommender.songs.names
+            tag_columns = {
+                n.split(":", 1)[1]: i for i, n in enumerate(names) if n.startswith("tag:")
+            }
+            d = len(names)
+            for _ in range(N_TREATED):
+                w = model.posterior.sample(self.rng)[:d]  # one plausible taste
+                weights = {tag: float(w[i]) for tag, i in tag_columns.items()}
+                plans.append(("steered", steer_modifiers(weights, self.vocab, parsed)))
+        else:
+            plans += [("reference", [])] * N_TREATED
         plans += [("plain", [])] * N_PLAIN
 
         request = ListenerRequest(
@@ -105,6 +117,7 @@ class RequestService:
                     attempts=0,
                     request_id=request.id,
                     variant=variant,
+                    reference_id=reference_id if variant == "reference" else None,
                 )
             )
         session.commit()
@@ -141,7 +154,8 @@ class RequestService:
         songs = self.recommender.songs
         scores = model.scores(request.rating_session.context)
 
-        ranked: dict[str, list[tuple[float, int]]] = {"steered": [], "plain": []}
+        treated = "reference" if any(j.variant == "reference" for j in request.jobs) else "steered"
+        ranked: dict[str, list[tuple[float, int]]] = {treated: [], "plain": []}
         for job in request.jobs:
             if job.song is None:
                 continue
@@ -151,7 +165,7 @@ class RequestService:
                 continue  # generated but not featurized: can't rank it
             ranked[job.variant].append((float(scores[row]), job.song.id))
         picks = []
-        for variant in ("steered", "plain"):
+        for variant in (treated, "plain"):
             # Random tie-break: with no ratings yet every score is 0, and the pick
             # should then be random rather than, say, always the newest song.
             candidates = ranked[variant]
@@ -167,7 +181,7 @@ class RequestService:
 
         slate = Slate(
             session_id=request.session_id,
-            policy=POLICY,
+            policy=f"request:top2{treated}+top2plain",
             model_name=SERVING_MODEL,
             n_training_choices=n_choices,
         )

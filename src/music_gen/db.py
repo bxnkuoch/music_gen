@@ -30,6 +30,7 @@ from sqlalchemy.orm import (
 )
 
 JOB_STATUSES = ("pending", "running", "done", "failed")
+JOB_VARIANTS = ("steered", "plain", "reference")
 
 
 class Base(DeclarativeBase):
@@ -64,10 +65,12 @@ class GenerationJob(Base):
             "duration_s",
             "bpm",
             "model_name",
+            "reference_id",
+            name="generation_jobs_same_settings_key",
             postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint(f"status IN {JOB_STATUSES}", name="valid_status"),
-        CheckConstraint("variant IS NULL OR variant IN ('steered', 'plain')", name="valid_variant"),
+        CheckConstraint(f"variant IS NULL OR variant IN {JOB_VARIANTS}", name="valid_variant"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -84,7 +87,11 @@ class GenerationJob(Base):
     request_id: Mapped[int | None] = mapped_column(
         ForeignKey("generation_requests.id", name="generation_jobs_request_id_fkey"), index=True
     )
-    variant: Mapped[str | None] = mapped_column(String(16))  # "steered" | "plain"
+    variant: Mapped[str | None] = mapped_column(String(16))  # one of JOB_VARIANTS
+    # Phase 6: the song whose sound this job should imitate (ACE-Step reference audio).
+    reference_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reference_songs.id", name="generation_jobs_reference_id_fkey")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -92,6 +99,7 @@ class GenerationJob(Base):
 
     prompt: Mapped[Prompt] = relationship(back_populates="jobs")
     song: Mapped["Song | None"] = relationship(back_populates="job")
+    reference: Mapped["ReferenceSong | None"] = relationship()
 
 
 class Song(Base):
@@ -133,6 +141,35 @@ class SongFeatures(Base):
     song_id: Mapped[int] = mapped_column(ForeignKey("songs.id"), primary_key=True)
     feature_set: Mapped[str] = mapped_column(String(160), primary_key=True)
     values: Mapped[dict[str, float]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+REFERENCE_STATUSES = ("pending", "ready", "failed")
+
+
+class ReferenceSong(Base):
+    """A real song the listener uploaded (Phase 6): "more like this".
+
+    The file stays in data/ (gitignored). The worker embeds it with the serving
+    embedding model, so it can be compared with the library.
+    """
+
+    __tablename__ = "reference_songs"
+    __table_args__ = (
+        CheckConstraint(f"status IN {REFERENCE_STATUSES}", name="valid_status"),
+        CheckConstraint(
+            "(status = 'ready') = (embedding IS NOT NULL)", name="ready_means_embedded"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    filename: Mapped[str] = mapped_column(Text)  # as uploaded; display only
+    audio_path: Mapped[str] = mapped_column(Text)  # relative to settings.data_dir
+    duration_s: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
+    embedding: Mapped[Any | None] = mapped_column(Vector(EMBEDDING_DIM))  # L2-normalized
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

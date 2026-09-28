@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from music_gen import audio
 from music_gen.api.requests import RequestService
 from music_gen.api.service import InvalidAnswer, Recommender, SlateAlreadyAnswered, SlateNotFound
-from music_gen.db import RatingSession, Slate, Song
+from music_gen.db import GenerationJob, Prompt, RatingSession, ReferenceSong, Slate, Song
+from music_gen.references import InvalidReference, save_reference, similar_songs
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class AnswerOut(BaseModel):
 class CreateRequest(BaseModel):
     text: str
     context: str
+    reference_id: int | None = None  # imitate this uploaded song (Phase 6)
 
 
 class RequestOut(BaseModel):
@@ -75,6 +77,52 @@ class RequestStatusOut(BaseModel):
     n_total: int
     slate: SlateOut | None  # once ready. Steered/plain labels are never sent: blind.
     error: str | None
+
+
+class SimilarSongOut(BaseModel):
+    song_id: int
+    audio_url: str
+    prompt: str
+    distance: float  # cosine distance: 0 = same direction
+
+
+class ReferenceOut(BaseModel):
+    reference_id: int
+    filename: str
+    duration_s: float
+    status: str  # pending (worker hasn't embedded it yet) | ready | failed
+    error: str | None
+    audio_url: str
+    similar: list[SimilarSongOut]  # closest library songs, once ready
+
+
+def reference_out(session: Session, reference: ReferenceSong) -> ReferenceOut:
+    nearest = similar_songs(session, reference)
+    prompts = dict(
+        session.execute(
+            select(Song.id, Prompt.text)
+            .join(GenerationJob, Song.job_id == GenerationJob.id)
+            .join(Prompt, GenerationJob.prompt_id == Prompt.id)
+            .where(Song.id.in_([song_id for song_id, _ in nearest]))
+        ).all()
+    )
+    return ReferenceOut(
+        reference_id=reference.id,
+        filename=reference.filename,
+        duration_s=reference.duration_s,
+        status=reference.status,
+        error=reference.error,
+        audio_url=f"/api/references/{reference.id}/audio",
+        similar=[
+            SimilarSongOut(
+                song_id=song_id,
+                audio_url=f"/api/songs/{song_id}/audio",
+                prompt=prompts[song_id],
+                distance=distance,
+            )
+            for song_id, distance in nearest
+        ],
+    )
 
 
 def slate_out(slate: Slate) -> SlateOut:
@@ -154,7 +202,7 @@ def create_app(
         if requests is None:
             raise HTTPException(503, "live generation isn't enabled on this server")
         try:
-            request = requests.create(session, body.text, body.context)
+            request = requests.create(session, body.text, body.context, body.reference_id)
         except InvalidAnswer as e:
             raise HTTPException(422, str(e)) from e
         return RequestOut(
@@ -177,6 +225,29 @@ def create_app(
             slate=slate_out(status.slate) if status.slate else None,
             error=status.error,
         )
+
+    @app.post("/api/references", response_model=ReferenceOut)
+    async def upload_reference(filename: str, request: Request, session: Db) -> ReferenceOut:
+        """The request body is the raw audio file (no multipart form needed)."""
+        try:
+            reference = save_reference(session, data_dir, filename, await request.body())
+        except InvalidReference as e:
+            raise HTTPException(422, str(e)) from e
+        return reference_out(session, reference)
+
+    @app.get("/api/references/{reference_id}", response_model=ReferenceOut)
+    def reference(reference_id: int, session: Db) -> ReferenceOut:
+        reference = session.get(ReferenceSong, reference_id)
+        if reference is None:
+            raise HTTPException(404, f"reference song {reference_id} doesn't exist")
+        return reference_out(session, reference)
+
+    @app.get("/api/references/{reference_id}/audio")
+    def reference_audio(reference_id: int, session: Db) -> FileResponse:
+        reference = session.get(ReferenceSong, reference_id)
+        if reference is None:
+            raise HTTPException(404, f"reference song {reference_id} doesn't exist")
+        return FileResponse(data_dir / reference.audio_path)
 
     @app.get("/api/profile")
     def profile(session: Db) -> dict:

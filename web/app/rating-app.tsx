@@ -5,9 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Contexts, type Profile, type Slate } from "./api";
 import CreateView from "./create-view";
 import styles from "./page.module.css";
+import ReferenceView from "./reference-view";
 import SlateView from "./slate-view";
 
-type Tab = "rate" | "create";
+type Tab = "rate" | "create" | "reference";
 
 export default function RatingApp() {
   const [tab, setTab] = useState<Tab>("rate");
@@ -75,6 +76,12 @@ export default function RatingApp() {
           >
             Create new
           </button>
+          <button
+            className={tab === "reference" ? styles.tabActive : styles.tab}
+            onClick={() => setTab("reference")}
+          >
+            More like this
+          </button>
         </nav>
         <p className={styles.muted}>
           {nRatings} rating{nRatings === 1 ? "" : "s"} so far
@@ -111,6 +118,7 @@ export default function RatingApp() {
       )}
 
       {tab === "create" && <CreateView contexts={contexts} onRated={onRated} />}
+      {tab === "reference" && <ReferenceView contexts={contexts} onRated={onRated} />}
 
       {profile && profile.n_ratings > 0 && (
         <aside className={styles.profile}>

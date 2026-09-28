@@ -37,6 +37,8 @@ class GenerationRequest:
     bpm: int | None = None  # None lets the model choose
     keyscale: str | None = None  # e.g. "A minor"
     lyrics: str = ""  # empty -> instrumental
+    # A song whose sound (timbre, production) to imitate. ACE-Step uses 3 x 10 s of it.
+    reference_audio: Path | None = None
 
     def __post_init__(self) -> None:
         if not self.prompt.strip():
@@ -95,6 +97,11 @@ class AceStepGenerator:
 
     def generate(self, request: GenerationRequest) -> GeneratedClip:
         pipe = self.pipeline
+        reference = (
+            None
+            if request.reference_audio is None
+            else _load_reference(request.reference_audio, pipe.sample_rate)
+        )
         start = time.perf_counter()
         output = pipe(
             prompt=request.prompt,
@@ -102,6 +109,7 @@ class AceStepGenerator:
             audio_duration=request.duration_s,
             bpm=request.bpm,
             keyscale=request.keyscale,
+            reference_audio=reference,
             # A CPU generator makes the same seed give the same noise on any device.
             generator=torch.Generator("cpu").manual_seed(request.seed),
         )
@@ -129,3 +137,13 @@ class AceStepGenerator:
         loudness = audio.rms_dbfs(clip_audio)
         if loudness < SILENCE_THRESHOLD_DBFS:
             raise GenerationError(f"model produced near-silent audio ({loudness:.1f} dBFS)")
+
+
+def _load_reference(path: Path, sample_rate: int) -> torch.Tensor:
+    """The pipeline wants a (2, samples) tensor at its own sample rate."""
+    clip, sr = audio.load_audio(path)
+    audio.validate(clip, sr)
+    stereo = clip if clip.ndim == 2 else np.stack([clip, clip])
+    if stereo.shape[0] != 2:
+        stereo = np.stack([audio.to_mono(stereo)] * 2)
+    return torch.from_numpy(audio.resample(stereo, sr, sample_rate))

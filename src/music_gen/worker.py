@@ -1,4 +1,5 @@
-"""Background worker for live requests: generate -> featurize -> rank.
+"""Background worker for live requests: generate -> featurize -> rank, and embed
+uploaded reference songs.
 
 Runs as its own process (scripts/worker.py) because it holds the ~10 GB music
 model; the API stays light and responsive. They communicate only through the
@@ -17,6 +18,7 @@ from music_gen.embeddings import AudioTextEmbedder
 from music_gen.features.pipeline import featurize_song
 from music_gen.features.tags import TagVocabulary
 from music_gen.pool.runner import Generator, process_next_job
+from music_gen.references import embed_pending_references
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ def work_once(
     requests: RequestService,
 ) -> bool:
     """Do one unit of work. Returns False when there was nothing to do."""
+    # References first: embedding one takes about a second, and someone is waiting.
+    n_references = embed_pending_references(session_factory, data_dir, embedder)
     outcome = process_next_job(session_factory, generator, data_dir)
     if outcome is not None:
         if outcome.song_id is None:
@@ -49,4 +53,4 @@ def work_once(
     with session_factory() as session:
         for request_id in requests.finalize_ready(session):
             logger.info("request %d ranked and ready", request_id)
-    return outcome is not None
+    return outcome is not None or n_references > 0
