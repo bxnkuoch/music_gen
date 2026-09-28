@@ -107,4 +107,4 @@ data/                  (git-ignored) model weights, audio, raw results
 
 ## Licenses
 
-Code license: not chosen yet (add a `LICENSE` file before making the repo public; MIT is the common choice for portfolios). Model licenses are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#10-licenses). MuQ-MuLan weights are **non-commercial** and are used only for research and evaluation.
+Code: [MIT](LICENSE). Model licenses are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#10-licenses). MuQ-MuLan weights are **non-commercial** and are used only for research and evaluation.
